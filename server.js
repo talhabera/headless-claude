@@ -1,6 +1,7 @@
 import express from "express";
 import { randomBytes } from "node:crypto";
 import { TmuxPool } from "./pool.js";
+import { buildAutonomous } from "./src/wire.js";
 
 const PORT = parseInt(process.env.PORT || "3000", 10);
 const HOST = process.env.HOST || "127.0.0.1";
@@ -52,6 +53,30 @@ app.use((req, res, next) => {
 });
 
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+const autonomous = buildAutonomous({ env: process.env });
+autonomous.mount(app);
+
+setInterval(
+  () =>
+    autonomous.poller
+      .tick()
+      .then(() => autonomous.scheduler.tick())
+      .catch((e) => console.error("poll/sched err:", e.message)),
+  autonomous.config.issuePollMs,
+).unref();
+
+setInterval(
+  () =>
+    autonomous.prSweep
+      .tick()
+      .catch((e) => console.error("prSweep err:", e.message)),
+  autonomous.config.prSyncMs,
+).unref();
+
+console.log(
+  `autonomous-dev wired: poll=${autonomous.config.issuePollMs}ms prSync=${autonomous.config.prSyncMs}ms maxRuns=${autonomous.config.maxConcurrentRuns}`,
+);
 
 app.get("/status", async (_req, res) => {
   const slots = await pool.list();
