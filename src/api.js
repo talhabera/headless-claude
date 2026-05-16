@@ -1,5 +1,5 @@
 // src/api.js
-export function mountApi(app, { db, projects, poller, scheduler }) {
+export function mountApi(app, { db, projects, poller, scheduler, executor }) {
   app.post("/projects", async (req, res) => {
     try {
       const p = await projects.register({
@@ -68,6 +68,10 @@ export function mountApi(app, { db, projects, poller, scheduler }) {
   app.post("/runs/:id/cancel", (req, res) => {
     const run = db.prepare("SELECT * FROM runs WHERE id=?").get(req.params.id);
     if (!run) return res.status(404).json({ error: "no such run" });
+    if (executor) {
+      const r = executor.cancel(Number(req.params.id));
+      return res.json({ ok: true, ...r });
+    }
     db.prepare(
       "UPDATE runs SET state='failed', fail_reason='cancelled by user', updated_at=? WHERE id=?",
     ).run(new Date().toISOString(), run.id);

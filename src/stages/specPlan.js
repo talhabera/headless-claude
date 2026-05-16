@@ -33,12 +33,14 @@ Output ONLY this block at the end:
 RESULT>>>`;
 }
 
-export async function runSpecPlan({ db, run, claude, issue, cwd, timeoutMs }) {
+export async function runSpecPlan({ db, run, claude, issue, cwd, timeoutMs, signal }) {
   const res = await claude.run({
     cwd,
     prompt: buildSpecPlanPrompt(issue),
     timeoutMs,
+    signal,
   });
+  if (res.cancelled) throw new Error("spec_plan: cancelled");
   if (res.timedOut) throw new Error("spec_plan: timed out");
   if (res.code !== 0)
     throw new Error(`spec_plan: claude exited ${res.code}: ${res.stderr.trim()}`);

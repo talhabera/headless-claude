@@ -15,12 +15,14 @@ Output ONLY this block:
 RESULT>>>`;
 }
 
-export async function runResolveConflict({ claude, cwd, files, timeoutMs }) {
+export async function runResolveConflict({ claude, cwd, files, timeoutMs, signal }) {
   const res = await claude.run({
     cwd,
     prompt: buildResolvePrompt(files),
     timeoutMs,
+    signal,
   });
+  if (res.cancelled) throw new Error("rebase-resolve: cancelled");
   if (res.timedOut) throw new Error("rebase-resolve: timed out");
   if (res.code !== 0)
     throw new Error(`rebase-resolve: claude exited ${res.code}`);

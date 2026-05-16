@@ -19,7 +19,7 @@ Output ONLY this block:
 RESULT>>>`;
 }
 
-export async function runReview({ db, run, claude, cwd, timeoutMs }) {
+export async function runReview({ db, run, claude, cwd, timeoutMs, signal }) {
   const spec =
     db.prepare("SELECT content FROM run_artifacts WHERE run_id=? AND kind='spec'").get(run.id)
       ?.content || "";
@@ -33,7 +33,9 @@ export async function runReview({ db, run, claude, cwd, timeoutMs }) {
     cwd,
     prompt: buildReviewPrompt(spec, checklist),
     timeoutMs,
+    signal,
   });
+  if (res.cancelled) throw new Error("review: cancelled");
   if (res.timedOut) throw new Error("review: timed out");
   if (res.code !== 0)
     throw new Error(`review: claude exited ${res.code}: ${res.stderr.trim()}`);
