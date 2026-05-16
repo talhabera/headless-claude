@@ -32,6 +32,17 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
     }
   }
 
+  async function syncCheckpoint(run, project, wtPath) {
+    const r = await workspace.rebaseOnBase(project, wtPath);
+    if (!r.conflicted) return;
+    await stages.runResolveConflict({
+      claude: stages.claude,
+      cwd: wtPath,
+      files: r.files || [],
+      timeoutMs: config.stageTimeoutMs,
+    });
+  }
+
   async function execute(runId) {
     let run = getRun(runId);
     const project = getProject(run.project_id);
@@ -68,14 +79,14 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
       while (true) {
         run = getRun(runId);
         transition(db, run.id, "implementing", { stage: "implement", message: "start" });
-        await workspace.rebaseOnBase(project, wt.path); // sync checkpoint
+        await syncCheckpoint(run, project, wt.path); // before implement
         await stages.runImplement({
           db, run, claude: stages.claude, cwd: wt.path,
           timeoutMs: config.stageTimeoutMs,
         });
 
         transition(db, run.id, "reviewing", { stage: "review", message: "start" });
-        await workspace.rebaseOnBase(project, wt.path); // sync checkpoint
+        await syncCheckpoint(run, project, wt.path); // before review
         const rv = await stages.runReview({
           db, run, claude: stages.claude, cwd: wt.path,
           timeoutMs: config.stageTimeoutMs,
