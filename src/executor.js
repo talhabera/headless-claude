@@ -6,7 +6,8 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
   const getProject = (pid) =>
     db.prepare("SELECT * FROM projects WHERE id=?").get(pid);
 
-  async function fail(run, project, reason) {
+  async function fail(runId, project, reason) {
+    const run = getRun(runId);
     db.prepare("UPDATE runs SET fail_reason=? WHERE id=?").run(reason, run.id);
     transition(db, run.id, "failed", { stage: "executor", level: "error", message: reason });
     try {
@@ -57,12 +58,15 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
         try {
           await gh.swapLabel(project.repo, run.issue_number, "in-progress", "decomposed");
         } catch {}
-        await workspace.removeWorktree(project, wt.path, {});
+        try {
+          await workspace.removeWorktree(project, wt.path, {});
+        } catch {}
         return;
       }
 
       let attempts = 0;
       while (true) {
+        run = getRun(runId);
         transition(db, run.id, "implementing", { stage: "implement", message: "start" });
         await workspace.rebaseOnBase(project, wt.path); // sync checkpoint
         await stages.runImplement({
@@ -79,7 +83,7 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
         if (rv.verdict === "approve") break;
         attempts++;
         if (attempts >= 2) {
-          await fail(run, project, `review: changes still requested after retry (${rv.notes})`);
+          await fail(runId, project, `review: changes still requested after retry (${rv.notes})`);
           return;
         }
       }
@@ -92,9 +96,12 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
       try {
         await gh.swapLabel(project.repo, run.issue_number, "in-progress", "pr-open");
       } catch {}
-      await workspace.removeWorktree(project, wt.path, {});
+      try {
+        await workspace.removeWorktree(project, wt.path, {});
+      } catch {}
     } catch (e) {
-      await fail(getRun(runId), getProject(getRun(runId).project_id), e.message);
+      const reason = e instanceof Error ? e.message : String(e);
+      await fail(runId, getProject(getRun(runId).project_id), reason);
     }
   }
 
