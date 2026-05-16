@@ -7,6 +7,7 @@ export async function decompose({ db, gh, project, parentRun, subIssues }) {
   if (hasCycle(subIssues))
     throw new Error("decompose: cyclic sub-issue dependency graph");
 
+  // Phase A — create all sub-issues, NO labels yet
   const keyToNumber = new Map();
   const links = [];
   for (const s of subIssues) {
@@ -16,23 +17,32 @@ export async function decompose({ db, gh, project, parentRun, subIssues }) {
       body,
     });
     keyToNumber.set(s.key, number);
-    try {
-      await gh.setLabel(project.repo, number, project.watch_label);
-    } catch {}
     links.push([number, s.dependsOn || []]);
   }
 
+  // Phase B — insert ALL issue_deps rows atomically before arming the poller
   const insDep = db.prepare(
     `INSERT OR IGNORE INTO issue_deps
      (project_id,issue_number,depends_on_issue_number) VALUES (?,?,?)`,
   );
-  for (const [number, deps] of links) {
-    for (const k of deps) {
-      const depNum = keyToNumber.get(k);
-      if (depNum) insDep.run(project.id, number, depNum);
+  const insertAll = db.transaction(() => {
+    for (const [number, deps] of links) {
+      for (const k of deps) {
+        const depNum = keyToNumber.get(k);
+        if (depNum) insDep.run(project.id, number, depNum);
+      }
     }
+  });
+  insertAll();
+
+  // Phase C — NOW label every sub-issue (arms the poller; deps rows already exist)
+  for (const [number] of links) {
+    try {
+      await gh.setLabel(project.repo, number, project.watch_label);
+    } catch {}
   }
 
+  // Phase D — rollup comment
   const list = subIssues
     .map((s) => `- [ ] #${keyToNumber.get(s.key)} ${s.title}` +
       (s.dependsOn?.length
