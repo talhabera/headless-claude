@@ -47,7 +47,8 @@ test("POST /runs/:id/cancel with executor calls executor.cancel with numeric id 
   const r = await call(app, "POST", "/runs/1/cancel");
 
   assert.equal(r.status, 200);
-  assert.deepEqual(r.json, { ok: true });
+  // API surfaces the executor.cancel() result alongside ok:true
+  assert.deepEqual(r.json, { ok: true, cancelled: true, killed: true });
   assert.equal(calledWith, 1); // numeric, not string
 });
 

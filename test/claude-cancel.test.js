@@ -36,15 +36,19 @@ test("abort mid-run kills child and resolves cancelled", async () => {
   // abort after 150ms
   const abortTimer = setTimeout(() => controller.abort(), 150);
 
+  const start = Date.now();
   const r = await claude.run({
     cwd: process.cwd(),
     prompt: "x",
     timeoutMs: 9000,
     signal: controller.signal,
   });
+  const elapsed = Date.now() - start;
 
   clearTimeout(abortTimer);
 
   assert.equal(r.cancelled, true);
   assert.equal(r.timedOut, false);
+  // resolved fast: did not wait for the 9000ms timeout
+  assert.ok(elapsed < 1500, `expected fast resolve, got ${elapsed}ms`);
 });

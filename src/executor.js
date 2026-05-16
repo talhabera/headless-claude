@@ -8,6 +8,31 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
 
   const active = new Map(); // runId -> AbortController
 
+  function ensureNotCancelled(ac) {
+    if (ac.signal.aborted) throw new Error("cancelled by user");
+  }
+
+  // Reject as soon as the run is cancelled, even if `p` never settles
+  // (e.g. a workspace op hangs). Stage runners observe the signal directly;
+  // this covers the gaps between/around them.
+  function raceAbort(ac, p) {
+    if (ac.signal.aborted) return Promise.reject(new Error("cancelled by user"));
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(new Error("cancelled by user"));
+      ac.signal.addEventListener("abort", onAbort, { once: true });
+      Promise.resolve(p).then(
+        (v) => {
+          ac.signal.removeEventListener("abort", onAbort);
+          resolve(v);
+        },
+        (e) => {
+          ac.signal.removeEventListener("abort", onAbort);
+          reject(e);
+        },
+      );
+    });
+  }
+
   async function fail(runId, project, reason) {
     const run = getRun(runId);
     db.prepare("UPDATE runs SET fail_reason=? WHERE id=?").run(reason, run.id);
@@ -34,8 +59,10 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
     }
   }
 
-  async function syncCheckpoint(run, project, wtPath, signal) {
-    const r = await workspace.rebaseOnBase(project, wtPath);
+  async function syncCheckpoint(run, project, wtPath, ac) {
+    ensureNotCancelled(ac);
+    const signal = ac.signal;
+    const r = await raceAbort(ac, workspace.rebaseOnBase(project, wtPath));
     if (!r.conflicted) return;
     await stages.runResolveConflict({
       claude: stages.claude,
@@ -53,10 +80,14 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
       let run = getRun(runId);
       const project = getProject(run.project_id);
       try {
-        const issue = await gh.issue(project.repo, run.issue_number);
+        ensureNotCancelled(ac);
+        const issue = await raceAbort(ac, gh.issue(project.repo, run.issue_number));
+        ensureNotCancelled(ac);
 
-        const baseSha = await workspace.prepareClone(project);
-        const wt = await workspace.addWorktree(project, run);
+        const baseSha = await raceAbort(ac, workspace.prepareClone(project));
+        ensureNotCancelled(ac);
+        const wt = await raceAbort(ac, workspace.addWorktree(project, run));
+        ensureNotCancelled(ac);
         db.prepare(
           "UPDATE runs SET worktree_path=?, branch=?, last_synced_base_sha=? WHERE id=?",
         ).run(wt.path, wt.branch, baseSha, run.id);
@@ -84,9 +115,10 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
 
         let attempts = 0;
         while (true) {
+          ensureNotCancelled(ac);
           run = getRun(runId);
           transition(db, run.id, "implementing", { stage: "implement", message: "start" });
-          await syncCheckpoint(run, project, wt.path, ac.signal); // before implement
+          await syncCheckpoint(run, project, wt.path, ac); // before implement
           await stages.runImplement({
             db, run, claude: stages.claude, cwd: wt.path,
             timeoutMs: config.stageTimeoutMs,
@@ -94,7 +126,7 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
           });
 
           transition(db, run.id, "reviewing", { stage: "review", message: "start" });
-          await syncCheckpoint(run, project, wt.path, ac.signal); // before review
+          await syncCheckpoint(run, project, wt.path, ac); // before review
           const rv = await stages.runReview({
             db, run, claude: stages.claude, cwd: wt.path,
             timeoutMs: config.stageTimeoutMs,
@@ -108,6 +140,7 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
           }
         }
 
+        ensureNotCancelled(ac);
         const pr = await stages.runPr({
           db, run: getRun(runId), project,
           gh, issue,
@@ -117,7 +150,9 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
           await gh.swapLabel(project.repo, run.issue_number, "in-progress", "pr-open");
         } catch {}
       } catch (e) {
-        const reason = e instanceof Error ? e.message : String(e);
+        const reason = ac.signal.aborted
+          ? "cancelled by user"
+          : (e instanceof Error ? e.message : String(e));
         await fail(runId, getProject(getRun(runId).project_id), reason);
       }
     } finally {
@@ -126,6 +161,7 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
   }
 
   function cancel(runId) {
+    if (!Number.isInteger(runId)) return { cancelled: false, killed: false };
     const ac = active.get(runId);
     if (ac && !ac.signal.aborted) {
       ac.abort();

@@ -69,12 +69,12 @@ export function mountApi(app, { db, projects, poller, scheduler, executor }) {
     const run = db.prepare("SELECT * FROM runs WHERE id=?").get(req.params.id);
     if (!run) return res.status(404).json({ error: "no such run" });
     if (executor) {
-      executor.cancel(Number(req.params.id));
-    } else {
-      db.prepare(
-        "UPDATE runs SET state='failed', fail_reason='cancelled by user', updated_at=? WHERE id=?",
-      ).run(new Date().toISOString(), run.id);
+      const r = executor.cancel(Number(req.params.id));
+      return res.json({ ok: true, ...r });
     }
+    db.prepare(
+      "UPDATE runs SET state='failed', fail_reason='cancelled by user', updated_at=? WHERE id=?",
+    ).run(new Date().toISOString(), run.id);
     res.json({ ok: true });
   });
 

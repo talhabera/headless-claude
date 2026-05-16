@@ -29,7 +29,7 @@ const gh = {
   createPR: async () => ({ url: "https://github.com/o/r/pull/1" }),
 };
 
-test("cancel while stage is in-flight fails run with reason matching /cancel/", async () => {
+test("cancel while stage is in-flight fails run with reason 'cancelled by user'", async () => {
   const db = openDb(":memory:");
   const run = base(db);
 
@@ -67,7 +67,11 @@ test("cancel while stage is in-flight fails run with reason matching /cancel/", 
 
   const r = db.prepare("SELECT state, fail_reason FROM runs WHERE id=1").get();
   assert.equal(r.state, "failed");
-  assert.match(r.fail_reason, /cancel/i);
+  assert.equal(r.fail_reason, "cancelled by user");
+
+  // active map cleared after execute resolved: a second cancel is non-active path
+  const second = ex.cancel(run.id);
+  assert.equal(second.killed, false);
 });
 
 test("cancel for non-active queued run sets state failed with reason 'cancelled by user'", async () => {
@@ -83,6 +87,38 @@ test("cancel for non-active queued run sets state failed with reason 'cancelled 
 
   assert.equal(result.cancelled, true);
   assert.equal(result.killed, false);
+
+  const r = db.prepare("SELECT state, fail_reason FROM runs WHERE id=1").get();
+  assert.equal(r.state, "failed");
+  assert.equal(r.fail_reason, "cancelled by user");
+});
+
+test("cancel between stages (during prepareClone) still fails the run with 'cancelled by user'", async () => {
+  const db = openDb(":memory:");
+  const run = base(db);
+
+  const workspace = {
+    prepareClone: () => new Promise(() => {}), // never resolves
+    addWorktree: async () => ({ path: "/wt/o-r-8-1", branch: "claude/8-o-r" }),
+    removeWorktree: async () => {},
+    rebaseOnBase: async () => ({ conflicted: false }),
+  };
+  const stages = {
+    runSpecPlan: async () => ({ size: "small", subIssues: [] }),
+    runImplement: async () => ({ allGreen: true }),
+    runReview: async () => ({ verdict: "approve", notes: "", checklist: [] }),
+    runPr: async () => ({ prUrl: "u" }),
+  };
+
+  const ex = createExecutor({
+    db, gh, workspace, stages, decompose: async () => {},
+    config: { stageTimeoutMs: 10000 },
+  });
+
+  const p = ex.execute(run.id); // do not await — stuck in prepareClone
+  await new Promise((r) => setTimeout(r, 20));
+  ex.cancel(run.id);
+  await p;
 
   const r = db.prepare("SELECT state, fail_reason FROM runs WHERE id=1").get();
   assert.equal(r.state, "failed");
