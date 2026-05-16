@@ -19,6 +19,7 @@ import { runPr } from "./stages/pr.js";
 import { runResolveConflict } from "./stages/resolveConflict.js";
 import { mountApi } from "./api.js";
 import { reconcileOnStartup } from "./reconcile.js";
+import { sweepWorkspacesOnStartup } from "./sweep.js";
 
 export function buildAutonomous({ env = process.env } = {}) {
   const config = loadConfig(env);
@@ -26,6 +27,7 @@ export function buildAutonomous({ env = process.env } = {}) {
   reconcileOnStartup(db);
   const mutex = createKeyedMutex();
   const git = createGit();
+  sweepWorkspacesOnStartup({ db, git, config });
   const gh = createGh({ bin: config.ghBin });
   const claude = createClaude({ bin: config.claudeBin });
   const projects = createProjects({
