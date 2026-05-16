@@ -7,6 +7,8 @@ import {
   mkdirSync,
   writeFileSync,
   rmSync,
+  realpathSync,
+  symlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,7 +21,7 @@ function makeFakeGit(porcelainResponses = {}) {
   const git = (cwd, args) => {
     calls.push({ cwd, args: [...args] });
     const key = args.join(" ");
-    if (key === "worktree list --porcelain") {
+    if (key === "worktree list --porcelain -z") {
       const output = porcelainResponses[cwd] || "";
       return { code: 0, stdout: output, stderr: "" };
     }
@@ -36,11 +38,12 @@ function makeFakeGit(porcelainResponses = {}) {
   return git;
 }
 
-// Build porcelain output listing the given worktree paths.
+// Build NUL-delimited `git worktree list --porcelain -z` output. Each record's
+// fields are NUL-separated and the record ends with a double NUL.
 function porcelain(paths) {
   return paths
-    .map((p) => `worktree ${p}\nHEAD abc123\nbranch refs/heads/main\n`)
-    .join("\n");
+    .map((p) => `worktree ${p}\0HEAD abc123\0branch refs/heads/main\0\0`)
+    .join("");
 }
 
 test("orphan registered worktree pruned, live pr_open kept", () => {
@@ -229,4 +232,167 @@ test("defensive: missing local_path is skipped without throwing", () => {
   assert.ok(result !== undefined, "should return a result object");
   assert.ok(typeof result.prunedWorktrees === "number", "result.prunedWorktrees is a number");
   assert.ok(typeof result.clearedLocks === "number", "result.clearedLocks is a number");
+});
+
+// ---------------------------------------------------------------------------
+// Adversarial / data-loss safety tests
+// ---------------------------------------------------------------------------
+
+test("clone located UNDER worktreesDir is never removed", () => {
+  const db = openDb(":memory:");
+  const worktreesDir = mkdtempSync(join(tmpdir(), "hc-wt-"));
+
+  // The clone itself lives under worktreesDir (a misconfiguration, but the
+  // sweep must NEVER delete a registered clone).
+  const cloneDir = join(worktreesDir, "theclone");
+  mkdirSync(join(cloneDir, ".git"), { recursive: true });
+
+  db.prepare(
+    `INSERT INTO projects (slug, repo, local_path, watch_label, base_branch, created_at)
+     VALUES ('o-r', 'o/r', ?, 'dev', 'main', '2024-01-01')`
+  ).run(cloneDir);
+
+  // No pr_open run. Porcelain lists only the clone (realpath form).
+  const git = makeFakeGit({
+    [cloneDir]: porcelain([realpathSync(cloneDir)]),
+  });
+  const config = { worktreesDir };
+
+  sweepWorkspacesOnStartup({ db, git, config });
+
+  assert.ok(existsSync(cloneDir), "clone dir under worktreesDir must be kept");
+  assert.ok(
+    !git.hasCall(
+      ({ args }) =>
+        args[0] === "worktree" &&
+        args[1] === "remove" &&
+        (args[3] === cloneDir || args[3] === realpathSync(worktreesDir + "/theclone"))
+    ),
+    "git worktree remove must NOT be called for the clone"
+  );
+});
+
+test("symlinked worktreesDir preserves a live pr_open worktree", (t) => {
+  const db = openDb(":memory:");
+  const realWtDir = mkdtempSync(join(tmpdir(), "hc-realwt-"));
+  const linkParent = mkdtempSync(join(tmpdir(), "hc-link-"));
+  const symWtDir = join(linkParent, "wtlink");
+
+  try {
+    symlinkSync(realWtDir, symWtDir);
+  } catch (e) {
+    if (e.code === "EPERM" || e.code === "EACCES") {
+      t.skip("symlink creation not permitted in this environment");
+      return;
+    }
+    throw e;
+  }
+
+  const cloneDir = mkdtempSync(join(tmpdir(), "hc-clone-"));
+  mkdirSync(join(cloneDir, ".git"), { recursive: true });
+
+  // Live worktree dir physically under the REAL dir.
+  const liveReal = join(realWtDir, "o-r-9-1");
+  mkdirSync(liveReal, { recursive: true });
+  // The symlink-form path that the DB stores.
+  const liveSym = join(symWtDir, "o-r-9-1");
+
+  db.prepare(
+    `INSERT INTO projects (slug, repo, local_path, watch_label, base_branch, created_at)
+     VALUES ('o-r', 'o/r', ?, 'dev', 'main', '2024-01-01')`
+  ).run(cloneDir);
+
+  // Run stores the symlink-form worktree_path.
+  db.prepare(
+    `INSERT INTO runs (project_id, issue_number, state, worktree_path, created_at, updated_at)
+     VALUES (1, 9, 'pr_open', ?, '2024-01-01', '2024-01-01')`
+  ).run(liveSym);
+
+  // Fake porcelain returns the REALPATH form (what real git would print).
+  const git = makeFakeGit({
+    [cloneDir]: porcelain([realpathSync(cloneDir), realpathSync(liveReal)]),
+  });
+
+  // config.worktreesDir points at the SYMLINK.
+  const config = { worktreesDir: symWtDir };
+
+  sweepWorkspacesOnStartup({ db, git, config });
+
+  assert.ok(existsSync(liveReal), "live pr_open worktree must still exist");
+  assert.ok(
+    !git.hasCall(
+      ({ args }) =>
+        args[0] === "worktree" &&
+        args[1] === "remove" &&
+        (args[3] === realpathSync(liveReal) || args[3] === liveSym)
+    ),
+    "git worktree remove must NOT target the live worktree"
+  );
+});
+
+test("empty/undefined worktreesDir is a no-op", () => {
+  const db = openDb(":memory:");
+  const cloneDir = mkdtempSync(join(tmpdir(), "hc-clone-"));
+  mkdirSync(join(cloneDir, ".git"), { recursive: true });
+  db.prepare(
+    `INSERT INTO projects (slug, repo, local_path, watch_label, base_branch, created_at)
+     VALUES ('o-r', 'o/r', ?, 'dev', 'main', '2024-01-01')`
+  ).run(cloneDir);
+
+  for (const bad of ["", undefined, "relative/path"]) {
+    const git = makeFakeGit({});
+    let result;
+    let threw = false;
+    try {
+      result = sweepWorkspacesOnStartup({ db, git, config: { worktreesDir: bad } });
+    } catch {
+      threw = true;
+    }
+    assert.ok(!threw, `must not throw for worktreesDir=${JSON.stringify(bad)}`);
+    assert.deepEqual(
+      result,
+      { prunedWorktrees: 0, clearedLocks: 0, removedLeftovers: 0 },
+      `zeroed summary for worktreesDir=${JSON.stringify(bad)}`
+    );
+    // Nothing executed: no git calls at all.
+    assert.equal(git.calls.length, 0, "no git calls for invalid worktreesDir");
+  }
+});
+
+test("sibling-prefix dir is untouched", () => {
+  const db = openDb(":memory:");
+  // worktreesDir and a sibling that shares its string prefix: "<wt>-evil".
+  const baseTmp = mkdtempSync(join(tmpdir(), "hc-base-"));
+  const worktreesDir = join(baseTmp, "wt");
+  const evilSibling = join(baseTmp, "wt-evil");
+  mkdirSync(worktreesDir, { recursive: true });
+  const evilPath = join(evilSibling, "x");
+  mkdirSync(evilPath, { recursive: true });
+
+  const cloneDir = mkdtempSync(join(tmpdir(), "hc-clone-"));
+  mkdirSync(join(cloneDir, ".git"), { recursive: true });
+
+  db.prepare(
+    `INSERT INTO projects (slug, repo, local_path, watch_label, base_branch, created_at)
+     VALUES ('o-r', 'o/r', ?, 'dev', 'main', '2024-01-01')`
+  ).run(cloneDir);
+
+  // Porcelain lists the clone plus a worktree at the sibling-prefix path.
+  const git = makeFakeGit({
+    [cloneDir]: porcelain([realpathSync(cloneDir), realpathSync(evilPath)]),
+  });
+  const config = { worktreesDir };
+
+  sweepWorkspacesOnStartup({ db, git, config });
+
+  assert.ok(existsSync(evilPath), "sibling-prefix dir must NOT be removed");
+  assert.ok(
+    !git.hasCall(
+      ({ args }) =>
+        args[0] === "worktree" &&
+        args[1] === "remove" &&
+        (args[3] === evilPath || args[3] === realpathSync(evilPath))
+    ),
+    "git worktree remove must NOT target the sibling-prefix path"
+  );
 });
