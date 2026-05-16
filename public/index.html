@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Headless Claude</title>
+    <style>
+      :root { color-scheme: dark; }
+      body { font: 15px/1.4 system-ui, -apple-system, sans-serif; background:#111; color:#eee; margin:0; padding:12px; }
+      h1 { font-size: 16px; margin: 4px 0 12px; }
+      .row { display:flex; gap:8px; flex-wrap:wrap; }
+      .slot { flex:1 1 200px; background:#1c1c1c; border:1px solid #2a2a2a; border-radius:8px; padding:10px; cursor:pointer; }
+      .slot.used { border-color:#a05; background:#1c0a14; }
+      .slot.fresh { border-color:#393; }
+      .slot.selected { outline:2px solid #4af; }
+      .slot .label { font-weight:600; }
+      .slot .meta { font-size:12px; color:#888; margin-top:4px; word-break:break-all; }
+      .controls { display:flex; gap:8px; margin:12px 0; flex-wrap:wrap; }
+      button { padding:10px 14px; background:#2a4; color:#fff; border:0; border-radius:6px; font:inherit; }
+      button.kill { background:#a24; }
+      button.spawn { background:#46c; }
+      button:disabled { opacity:.5; }
+      .token { display:block; width:100%; box-sizing:border-box; margin-bottom:8px; padding:6px; background:#1c1c1c; color:#eee; border:1px solid #333; border-radius:6px; }
+      .hint { color:#888; font-size:13px; margin-top:8px; }
+      code { background:#222; padding:1px 5px; border-radius:3px; }
+    </style>
+  </head>
+  <body>
+    <h1>Headless Claude <span id="summary" style="font-weight:400;color:#888;font-size:13px"></span></h1>
+    <input id="token" class="token" placeholder="auth token (saved locally)" />
+    <div id="slots" class="row"></div>
+    <div class="controls">
+      <button id="spawn" class="spawn">Spawn one</button>
+      <button id="kill" class="kill">Kill selected</button>
+    </div>
+    <p class="hint">
+      Each slot is a detached <code>tmux</code> session running <code>claude</code>.
+      Attach from a terminal: <code>tmux attach -t claude-slot-&lt;id&gt;</code>.
+      Each session registers with your <code>claude.ai/code</code> remote control on startup.
+    </p>
+    <script>
+      const slotsEl = document.getElementById("slots");
+      const tokenInput = document.getElementById("token");
+      tokenInput.value = localStorage.getItem("token") || "";
+      tokenInput.oninput = () => localStorage.setItem("token", tokenInput.value);
+
+      let selectedId = null;
+
+      function authHeaders(extra = {}) {
+        const t = tokenInput.value.trim();
+        return t ? { Authorization: "Bearer " + t, ...extra } : extra;
+      }
+
+      async function refresh() {
+        try {
+          const r = await fetch("/status", { headers: authHeaders() });
+          if (!r.ok) throw new Error("status " + r.status);
+          const d = await r.json();
+          document.getElementById("summary").textContent =
+            `· count ${d.count}/${d.max} · fresh ${d.fresh}/${d.target} · used ${d.used} · attached ${d.attached}`;
+          slotsEl.innerHTML = "";
+          for (const s of d.slots) {
+            const el = document.createElement("div");
+            el.className = "slot " + (s.fresh ? "fresh" : "used") + (s.id === selectedId ? " selected" : "");
+            el.onclick = () => { selectedId = s.id === selectedId ? null : s.id; refresh(); };
+            const created = new Date(s.createdAt).toLocaleTimeString();
+            el.innerHTML = `<div class="label">slot-${s.id} · ${s.fresh ? "fresh" : "used"}${s.attached ? " · attached" : ""}</div>
+              <div class="meta">tmux: ${s.name}</div>
+              <div class="meta">created: ${created} · history: ${s.historySize}</div>`;
+            slotsEl.appendChild(el);
+          }
+        } catch (e) { slotsEl.textContent = "status err: " + e.message; }
+      }
+      refresh();
+      setInterval(refresh, 3000);
+
+      document.getElementById("spawn").onclick = async () => {
+        const r = await fetch("/spawn", { method: "POST", headers: authHeaders() });
+        if (!r.ok) alert("spawn failed: " + (await r.text()));
+        refresh();
+      };
+
+      document.getElementById("kill").onclick = async () => {
+        if (!selectedId) { alert("select a slot first"); return; }
+        const r = await fetch("/kill/" + selectedId, { method: "POST", headers: authHeaders() });
+        if (!r.ok) alert("kill failed: " + (await r.text()));
+        selectedId = null;
+        refresh();
+      };
+    </script>
+  </body>
+</html>

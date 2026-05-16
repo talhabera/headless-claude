@@ -1,0 +1,18 @@
+[Unit]
+Description=Headless Claude pool server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/talhabera/claude-projects/headless-claude
+EnvironmentFile=/home/talhabera/claude-projects/headless-claude/.env
+ExecStart=/home/talhabera/.local/bin/node /home/talhabera/claude-projects/headless-claude/server.js
+Restart=on-failure
+RestartSec=3
+# Don't kill spawned tmux sessions when the service stops.
+KillMode=process
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
