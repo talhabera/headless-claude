@@ -18,10 +18,12 @@ import { runReview } from "./stages/review.js";
 import { runPr } from "./stages/pr.js";
 import { runResolveConflict } from "./stages/resolveConflict.js";
 import { mountApi } from "./api.js";
+import { reconcileOnStartup } from "./reconcile.js";
 
 export function buildAutonomous({ env = process.env } = {}) {
   const config = loadConfig(env);
   const db = openDb(config.dbPath);
+  reconcileOnStartup(db);
   const mutex = createKeyedMutex();
   const git = createGit();
   const gh = createGh({ bin: config.ghBin });
