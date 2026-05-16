@@ -10,16 +10,16 @@ this branch.
   `2883554`): `remove()` now deletes child rows (runs/run_logs/run_artifacts/
   issue_deps) and the clone dir, idempotently.
 
+- **`POST /runs/:id/cancel` did not kill the running `claude -p`**
+  (spec line 213; review Important #1) — FIXED (commits `3f7c92f`,
+  `2d02d31`): AbortController per run in the executor, `signal` threaded
+  through the claude adapter + stages (SIGKILL child on abort),
+  `executor.cancel(runId)` wired via `wire.js`→`api.js`. Between-stages /
+  hung-await cancels handled via `ensureNotCancelled` checkpoints +
+  `raceAbort`; deterministic `fail_reason="cancelled by user"`; API
+  surfaces `{ok,cancelled,killed}`. Spec + code-quality reviewed.
+
 ## Open follow-ups
-1. **`POST /runs/:id/cancel` does not kill the running `claude -p`**
-   (spec line 213; review Important #1). Today it only flips
-   `runs.state='failed'`; the spawned child runs until `STAGE_TIMEOUT_MS`.
-   Fix: thread an `AbortSignal` from an executor-held `Map<runId,
-   AbortController>` through the stage runners into the `claude` adapter
-   (SIGKILL child on abort); add `executor.cancel(runId)`; have `wire.js`
-   pass it to `mountApi`; guard executor post-stage transitions with a
-   cancelled check. Cross-cutting (claude.js + 5 stages + executor + api +
-   wire) — its own task.
 2. **decompose → poller TOCTOU on `issue_deps`** (review Important #3).
    `decompose` labels each sub-issue before all `issue_deps` rows are
    inserted; a poll tick in that window could enqueue a dependent as
