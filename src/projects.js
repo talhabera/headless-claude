@@ -8,7 +8,7 @@ export function slugify(repo) {
 
 export function createProjects({ db, git, projectsDir }) {
   return {
-    async register({ repo, watchLabel, baseBranch }) {
+    async register({ repo, watchLabel, baseBranch, previewBranch, previewUrl }) {
       const slug = slugify(repo);
       const existing = db
         .prepare("SELECT 1 FROM projects WHERE slug=?")
@@ -22,14 +22,16 @@ export function createProjects({ db, git, projectsDir }) {
       ]);
       if (r.code !== 0) throw new Error(`clone failed: ${r.stderr.trim()}`);
       db.prepare(
-        `INSERT INTO projects (slug,repo,local_path,watch_label,base_branch,created_at)
-         VALUES (?,?,?,?,?,?)`,
+        `INSERT INTO projects (slug,repo,local_path,watch_label,base_branch,preview_branch,preview_url,created_at)
+         VALUES (?,?,?,?,?,?,?,?)`,
       ).run(
         slug,
         repo,
         localPath,
         watchLabel,
         baseBranch,
+        previewBranch ?? null,
+        previewUrl ?? null,
         new Date().toISOString(),
       );
       return db.prepare("SELECT * FROM projects WHERE slug=?").get(slug);

@@ -6,6 +6,8 @@ export function mountApi(app, { db, projects, poller, scheduler, executor }) {
         repo: req.body.repo,
         watchLabel: req.body.watchLabel,
         baseBranch: req.body.baseBranch,
+        previewBranch: req.body.previewBranch,
+        previewUrl: req.body.previewUrl,
       });
       res.json(p);
     } catch (e) {

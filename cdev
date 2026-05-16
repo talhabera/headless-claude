@@ -3,6 +3,8 @@
 #
 # Usage:
 #   cdev add <owner/repo> --label <L> --base <B>   register + clone a project
+#             [--preview-branch <B>]               branch to deploy previews from
+#             [--preview-url <U>]                  base URL for preview deployments
 #   cdev projects                                   list projects
 #   cdev runs [--state S]                           list runs
 #   cdev logs <run-id>                              show a run's logs
@@ -16,7 +18,7 @@ HOST="${HOST:-127.0.0.1}"; PORT="${PORT:-3000}"
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
-  -h|--help|"") sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+  -h|--help|"") sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
 esac
 
 TOKEN="${AUTH_TOKEN:?AUTH_TOKEN not set in $ENV_FILE}"
@@ -26,14 +28,19 @@ BASE="http://${HOST}:${PORT}"
 case "$cmd" in
   add)
     repo="$1"; shift
-    label="claude-dev"; base="main"
+    label="claude-dev"; base="main"; preview_branch=""; preview_url=""
     while [ $# -gt 0 ]; do case "$1" in
       --label) label="$2"; shift 2 ;;
       --base) base="$2"; shift 2 ;;
+      --preview-branch) preview_branch="$2"; shift 2 ;;
+      --preview-url) preview_url="$2"; shift 2 ;;
       *) shift ;;
     esac; done
-    api -X POST "${BASE}/projects" -H 'Content-Type: application/json' \
-      -d "$(printf '{"repo":"%s","watchLabel":"%s","baseBranch":"%s"}' "$repo" "$label" "$base")"
+    body="$(printf '{"repo":"%s","watchLabel":"%s","baseBranch":"%s"' "$repo" "$label" "$base")"
+    [ -n "$preview_branch" ] && body="${body}$(printf ',"previewBranch":"%s"' "$preview_branch")"
+    [ -n "$preview_url" ]    && body="${body}$(printf ',"previewUrl":"%s"' "$preview_url")"
+    body="${body}}"
+    api -X POST "${BASE}/projects" -H 'Content-Type: application/json' -d "$body"
     echo ;;
   projects) api "${BASE}/projects"; echo ;;
   runs)

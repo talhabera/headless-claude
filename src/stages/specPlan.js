@@ -14,11 +14,24 @@ export function buildSpecPlanPrompt(issue) {
 Issue body:
 ${issue.body || "(empty)"}
 
+PIPELINE CONSTRAINTS (mandatory):
+- You are running inside an automated orchestrator. The orchestrator EXCLUSIVELY owns all git-remote and GitHub operations.
+- DO NOT run \`gh\` at all (no \`gh pr create\`, \`gh pr\`, \`gh issue\`, \`gh api\`). DO NOT \`git push\`, create/switch/delete branches, open or modify pull requests or issues, or change git remotes.
+- Work ONLY in the current worktree: read/edit files, run the project's tests/lint/typecheck, and \`git add\`/\`git commit\` locally. Nothing else.
+- Creating a PR or pushing yourself will produce a duplicate/wrong-base PR and is a hard error.
+
 Use the superpowers brainstorming + writing-plans approach to produce a spec
 and a phased implementation plan for THIS repository (you are in its worktree).
 Extract explicit acceptance criteria as a checklist. Then judge whether the
 issue is small enough to implement as a single PR, or large enough that it
 must be split into independent, dependency-ordered sub-issues.
+
+The spec AND the acceptanceChecklist MUST capture, verbatim, every explicit
+convention, constraint, and stack rule stated in the issue (for example:
+"strings live in messages/{tr,en,ru}.json, never hardcode", file/location
+mandates, "no behavior change") as explicit checklist items so that later
+stages can enforce them. Any convention stated in the issue body must appear
+as a distinct item in the acceptanceChecklist — not just in prose.
 
 Run a self-review of the spec+plan (placeholders, contradictions, ambiguity,
 scope). If it does not pass, set selfReviewPassed=false.

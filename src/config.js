@@ -18,5 +18,7 @@ export function loadConfig(env = process.env) {
     keepFailedWorktree: bool(env.KEEP_FAILED_WORKTREE, false),
     ghBin: env.GH_BIN || "gh",
     claudeBin: env.CLAUDE_BIN || "/home/talhabera/.local/bin/claude",
+    previewDeployTimeoutMs: num(env.PREVIEW_DEPLOY_TIMEOUT_MS, 600000),
+    previewPollMs: num(env.PREVIEW_POLL_MS, 10000),
   };
 }

@@ -5,6 +5,7 @@ export const LABEL_FOR = {
   spec_plan: "in-progress",
   implementing: "in-progress",
   reviewing: "in-progress",
+  previewing: "in-progress",
   decomposing: "in-progress",
   pr_open: "pr-open",
   decomposed: "decomposed",

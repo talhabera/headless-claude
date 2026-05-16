@@ -1,7 +1,7 @@
 // src/executor.js
 import { transition, LABEL_FOR } from "./state.js";
 
-export function createExecutor({ db, gh, workspace, stages, decompose, config }) {
+export function createExecutor({ db, gh, workspace, stages, decompose, config, git, preview }) {
   const getRun = (id) => db.prepare("SELECT * FROM runs WHERE id=?").get(id);
   const getProject = (pid) =>
     db.prepare("SELECT * FROM projects WHERE id=?").get(pid);
@@ -139,6 +139,36 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
             return;
           }
         }
+
+        // preview-deploy gate (required but tolerant): only if configured
+        const proj = getProject(run.project_id); // current row, has preview_branch/preview_url
+        if (proj.preview_branch && proj.preview_url) {
+          ensureNotCancelled(ac);
+          transition(db, run.id, "previewing", { stage: "previewing", message: "start" });
+          try {
+            const m = await raceAbort(ac, workspace.runExclusive(proj, () =>
+              preview.mergeToPreview({ git, project: proj, runBranch: run.branch }),
+            ));
+            if (!m.ok) {
+              transition(db, run.id, "previewing", { stage: "previewing", level: "warn",
+                message: `preview merge skipped (${m.step}: ${m.reason || ""})` });
+            } else {
+              const d = await raceAbort(ac, preview.pollUrl(proj.preview_url, {
+                timeoutMs: config.previewDeployTimeoutMs,
+                pollMs: config.previewPollMs,
+              }));
+              transition(db, run.id, "previewing", { stage: "previewing",
+                level: d.ok ? "info" : "warn",
+                message: d.ok ? `preview live ${d.status} in ${d.elapsedMs}ms`
+                               : `preview not confirmed: ${d.reason}` });
+            }
+          } catch (e) {
+            if (ac.signal.aborted) throw e; // cancel must NOT be tolerated — escalate to outer catch
+            transition(db, run.id, "previewing", { stage: "previewing", level: "warn",
+              message: `preview step error (tolerated): ${e instanceof Error ? e.message : String(e)}` });
+          }
+        }
+        // then proceed to runPr (base branch = project.base_branch, unchanged)
 
         ensureNotCancelled(ac);
         const pr = await stages.runPr({

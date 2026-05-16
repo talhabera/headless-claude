@@ -80,5 +80,8 @@ export function createWorkspace({ git, mutex, worktreesDir }) {
           git(project.local_path, ["branch", "-D", branch]);
       });
     },
+    runExclusive(project, fn) {
+      return lock(project, fn);
+    },
   };
 }

@@ -8,6 +8,12 @@ code, refactor. Detect the project's own test/lint/typecheck commands and
 run them. Do NOT finish until tests, lint, and typecheck are all green.
 Commit frequently.
 
+PIPELINE CONSTRAINTS (mandatory):
+- You are running inside an automated orchestrator. The orchestrator EXCLUSIVELY owns all git-remote and GitHub operations.
+- DO NOT run \`gh\` at all (no \`gh pr create\`, \`gh pr\`, \`gh issue\`, \`gh api\`). DO NOT \`git push\`, create/switch/delete branches, open or modify pull requests or issues, or change git remotes.
+- Work ONLY in the current worktree: read/edit files, run the project's tests/lint/typecheck, and \`git add\`/\`git commit\` locally. Nothing else.
+- Creating a PR or pushing yourself will produce a duplicate/wrong-base PR and is a hard error.
+
 PLAN:
 ${plan}
 
