@@ -235,3 +235,113 @@ test("preview skipped when project has no preview_branch/preview_url", async () 
   // mergeToPreview must NOT have been called
   assert.equal(mergeCalled, false, "mergeToPreview should not be called when unconfigured");
 });
+
+// ---------------------------------------------------------------------------
+// Case 6 (regression / BUG 1+2): cancel during preview pollUrl →
+// run fails 'cancelled by user', runPr NEVER called, state != pr_open
+// ---------------------------------------------------------------------------
+test("cancel during preview pollUrl → run fails 'cancelled by user', runPr NOT called", async () => {
+  const db = openDb(":memory:");
+  const { run } = base(db, {
+    preview_branch: "preprod",
+    preview_url: "https://preview.example.com",
+  });
+
+  const preview = {
+    mergeToPreview: async () => ({ ok: true, previewBranch: "preprod" }),
+    // never settles — only raceAbort(ac, ...) can break this when cancel fires
+    pollUrl: () => new Promise(() => {}),
+  };
+
+  const stages = makeStages();
+  const ex = createExecutor({
+    db, gh, workspace: ws, stages, decompose: async () => {},
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 600000, previewPollMs: 500 },
+    git: noopGit, preview,
+  });
+
+  const p = ex.execute(run.id); // do not await — stuck in pollUrl
+  await new Promise((r) => setTimeout(r, 20));
+  ex.cancel(run.id);
+  await p;
+
+  const r = db.prepare("SELECT state, fail_reason FROM runs WHERE id=1").get();
+  assert.equal(r.state, "failed");
+  assert.match(r.fail_reason, /cancelled by user/);
+  assert.notEqual(r.state, "pr_open");
+
+  // runPr must NEVER have been invoked on a cancelled run
+  assert.equal(stages.prCallCount, 0, "runPr must NOT be called when cancelled during preview");
+});
+
+// ---------------------------------------------------------------------------
+// Case 7 (regression / BUG 2 narrowness): cancel during preview mergeToPreview
+// (slow push) → run fails 'cancelled by user', runPr NOT called
+// ---------------------------------------------------------------------------
+test("cancel during preview mergeToPreview → run fails 'cancelled by user', runPr NOT called", async () => {
+  const db = openDb(":memory:");
+  const { run } = base(db, {
+    preview_branch: "preprod",
+    preview_url: "https://preview.example.com",
+  });
+
+  const preview = {
+    // never settles — simulates a hung git push; raceAbort must break it on cancel
+    mergeToPreview: () => new Promise(() => {}),
+    pollUrl: async () => ({ ok: true, status: 200, elapsedMs: 5 }),
+  };
+
+  const stages = makeStages();
+  const ex = createExecutor({
+    db, gh, workspace: ws, stages, decompose: async () => {},
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 600000, previewPollMs: 500 },
+    git: noopGit, preview,
+  });
+
+  const p = ex.execute(run.id);
+  await new Promise((r) => setTimeout(r, 20));
+  ex.cancel(run.id);
+  await p;
+
+  const r = db.prepare("SELECT state, fail_reason FROM runs WHERE id=1").get();
+  assert.equal(r.state, "failed");
+  assert.match(r.fail_reason, /cancelled by user/);
+  assert.notEqual(r.state, "pr_open");
+  assert.equal(stages.prCallCount, 0, "runPr must NOT be called when cancelled during merge");
+});
+
+// ---------------------------------------------------------------------------
+// Case 8 (regression / BUG 2 not over-broadened): a NON-abort thrown error is
+// STILL tolerated — run proceeds to pr_open (re-throw guard only catches aborts)
+// ---------------------------------------------------------------------------
+test("non-abort thrown error during preview is STILL tolerated → pr_open", async () => {
+  const db = openDb(":memory:");
+  const { run } = base(db, {
+    preview_branch: "preprod",
+    preview_url: "https://preview.example.com",
+  });
+
+  const preview = {
+    mergeToPreview: async () => { throw new Error("git push: connection reset"); },
+    pollUrl: async () => ({ ok: true, status: 200, elapsedMs: 5 }),
+  };
+
+  const stages = makeStages();
+  const ex = createExecutor({
+    db, gh, workspace: ws, stages, decompose: async () => {},
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500 },
+    git: noopGit, preview,
+  });
+
+  await ex.execute(run.id);
+
+  // Genuine infra error tolerated → still reaches pr_open
+  assert.equal(db.prepare("SELECT state FROM runs WHERE id=1").get().state, "pr_open");
+
+  const logs = db.prepare("SELECT * FROM run_logs WHERE run_id=1 AND stage='previewing'").all();
+  const warnLog = logs.find((l) => l.message && l.message.includes("preview step error (tolerated)"));
+  assert.ok(warnLog, `expected a tolerated-error log, got: ${JSON.stringify(logs)}`);
+
+  // runPr still invoked exactly once
+  assert.equal(stages.prCallCount, 1, "runPr should still be called for tolerated infra errors");
+});

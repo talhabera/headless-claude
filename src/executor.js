@@ -146,24 +146,24 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config, g
           ensureNotCancelled(ac);
           transition(db, run.id, "previewing", { stage: "previewing", message: "start" });
           try {
-            const m = await workspace.runExclusive(proj, () =>
+            const m = await raceAbort(ac, workspace.runExclusive(proj, () =>
               preview.mergeToPreview({ git, project: proj, runBranch: run.branch }),
-            );
+            ));
             if (!m.ok) {
               transition(db, run.id, "previewing", { stage: "previewing", level: "warn",
                 message: `preview merge skipped (${m.step}: ${m.reason || ""})` });
             } else {
-              const d = await preview.pollUrl(proj.preview_url, {
+              const d = await raceAbort(ac, preview.pollUrl(proj.preview_url, {
                 timeoutMs: config.previewDeployTimeoutMs,
                 pollMs: config.previewPollMs,
-              });
+              }));
               transition(db, run.id, "previewing", { stage: "previewing",
                 level: d.ok ? "info" : "warn",
                 message: d.ok ? `preview live ${d.status} in ${d.elapsedMs}ms`
                                : `preview not confirmed: ${d.reason}` });
             }
           } catch (e) {
-            // tolerant: never fail the run because of preview/infra
+            if (ac.signal.aborted) throw e; // cancel must NOT be tolerated — escalate to outer catch
             transition(db, run.id, "previewing", { stage: "previewing", level: "warn",
               message: `preview step error (tolerated): ${e instanceof Error ? e.message : String(e)}` });
           }
