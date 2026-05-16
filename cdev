@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# cdev — control the headless-claude autonomous dev subsystem.
+#
+# Usage:
+#   cdev add <owner/repo> --label <L> --base <B>   register + clone a project
+#   cdev projects                                   list projects
+#   cdev runs [--state S]                           list runs
+#   cdev logs <run-id>                              show a run's logs
+#   cdev retry <run-id>                             re-queue a failed run
+#   cdev poll                                       force a poll+schedule tick
+set -euo pipefail
+
+ENV_FILE="${HEADLESS_CLAUDE_ENV:-/home/talhabera/claude-projects/headless-claude/.env}"
+[ -f "$ENV_FILE" ] && { set -a; . "$ENV_FILE"; set +a; }
+HOST="${HOST:-127.0.0.1}"; PORT="${PORT:-3000}"
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  -h|--help|"") sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+esac
+
+TOKEN="${AUTH_TOKEN:?AUTH_TOKEN not set in $ENV_FILE}"
+api() { curl -fsS -H "Authorization: Bearer ${TOKEN}" "$@"; }
+BASE="http://${HOST}:${PORT}"
+
+case "$cmd" in
+  add)
+    repo="$1"; shift
+    label="claude-dev"; base="main"
+    while [ $# -gt 0 ]; do case "$1" in
+      --label) label="$2"; shift 2 ;;
+      --base) base="$2"; shift 2 ;;
+      *) shift ;;
+    esac; done
+    api -X POST "${BASE}/projects" -H 'Content-Type: application/json' \
+      -d "$(printf '{"repo":"%s","watchLabel":"%s","baseBranch":"%s"}' "$repo" "$label" "$base")"
+    echo ;;
+  projects) api "${BASE}/projects"; echo ;;
+  runs)
+    q=""; [ "${1:-}" = "--state" ] && q="?state=$2"
+    api "${BASE}/runs${q}"; echo ;;
+  logs) api "${BASE}/runs/$1"; echo ;;
+  retry) api -X POST "${BASE}/runs/$1/retry"; echo ;;
+  poll) api -X POST "${BASE}/poll"; echo ;;
+  *) echo "cdev: unknown command '$cmd'" >&2; exit 1 ;;
+esac
