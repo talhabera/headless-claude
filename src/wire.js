@@ -20,6 +20,7 @@ import { runResolveConflict } from "./stages/resolveConflict.js";
 import { mountApi } from "./api.js";
 import { reconcileOnStartup } from "./reconcile.js";
 import { sweepWorkspacesOnStartup } from "./sweep.js";
+import * as preview from "./preview.js";
 
 export function buildAutonomous({ env = process.env } = {}) {
   const config = loadConfig(env);
@@ -49,7 +50,7 @@ export function buildAutonomous({ env = process.env } = {}) {
     runResolveConflict,
   };
   const executor = createExecutor({
-    db, gh, workspace, stages, decompose, config,
+    db, gh, workspace, stages, decompose, config, git, preview,
   });
   const scheduler = createScheduler({
     db,
