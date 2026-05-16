@@ -107,9 +107,6 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config })
       try {
         await gh.swapLabel(project.repo, run.issue_number, "in-progress", "pr-open");
       } catch {}
-      try {
-        await workspace.removeWorktree(project, wt.path, {});
-      } catch {}
     } catch (e) {
       const reason = e instanceof Error ? e.message : String(e);
       await fail(runId, getProject(getRun(runId).project_id), reason);
