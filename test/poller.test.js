@@ -72,7 +72,7 @@ test("pr_open run whose issue closed → merged", async () => {
   const db = openDb(":memory:");
   project(db);
   db.prepare(
-    "INSERT INTO runs (project_id,issue_number,state,branch,attempt,created_at,updated_at) VALUES (1,4,'pr_open','claude/4-o-r',1,'t','t')",
+    "INSERT INTO runs (project_id,issue_number,state,branch,worktree_path,attempt,created_at,updated_at) VALUES (1,4,'pr_open','claude/4-o-r','/wt/4',1,'t','t')",
   ).run();
   const gh = {
     listLabeledIssues: async () => [],
@@ -80,11 +80,19 @@ test("pr_open run whose issue closed → merged", async () => {
     issue: async () => ({ state: "CLOSED", closed: true }),
   };
   const removed = [];
-  const workspace = { removeWorktree: async (_p, path) => removed.push(path) };
+  const workspace = {
+    removeWorktree: async (_p, path, opts) => removed.push([path, opts]),
+  };
   const poller = createPoller({ db, gh, workspace });
   await poller.tick();
   assert.equal(
     db.prepare("SELECT state FROM runs WHERE issue_number=4").get().state,
     "merged",
   );
+  assert.equal(removed.length, 1);
+  assert.equal(removed[0][0], "/wt/4");
+  assert.deepEqual(removed[0][1], {
+    deleteBranch: true,
+    branch: "claude/4-o-r",
+  });
 });
