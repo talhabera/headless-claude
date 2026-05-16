@@ -88,5 +88,35 @@
         refresh();
       };
     </script>
+  <section id="runs">
+  <h2>Autonomous Runs</h2>
+  <table id="runs-table" border="1" cellpadding="4">
+    <thead><tr><th>ID</th><th>Issue</th><th>State</th><th>PR</th><th>Attn</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <script>
+    (function () {
+      var tok = new URLSearchParams(location.search).get("token") || "";
+      function refresh() {
+        fetch("/runs", { headers: { Authorization: "Bearer " + tok } })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            var b = document.querySelector("#runs-table tbody");
+            b.innerHTML = (d.runs || [])
+              .map(function (x) {
+                return "<tr><td>" + x.id + "</td><td>#" + x.issue_number +
+                  "</td><td>" + x.state + "</td><td>" +
+                  (x.pr_url ? "<a href='" + x.pr_url + "'>PR</a>" : "") +
+                  "</td><td>" + (x.needs_attention ? "⚠" : "") + "</td></tr>";
+              })
+              .join("");
+          })
+          .catch(function () {});
+      }
+      refresh();
+      setInterval(refresh, 5000);
+    })();
+  </script>
+</section>
   </body>
 </html>
