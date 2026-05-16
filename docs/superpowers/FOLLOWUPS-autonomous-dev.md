@@ -19,16 +19,31 @@ this branch.
   `raceAbort`; deterministic `fail_reason="cancelled by user"`; API
   surfaces `{ok,cancelled,killed}`. Spec + code-quality reviewed.
 
+- **decompose → poller TOCTOU on `issue_deps`** (review Important #3) —
+  FIXED (commit `5093b2e`): `decompose` now runs in strict phases —
+  create all sub-issues, insert all `issue_deps` in a single
+  `db.transaction`, THEN apply the watch label, then the rollup comment.
+  No window where a labeled sub-issue lacks its deps. Ordering-invariant
+  test added.
+
+- **Startup orphan-worktree prune + stale git-lock sweep**
+  (spec lines 74, 187) — FIXED (commits `b098ac5`, `3ae66c3`):
+  `src/sweep.js` `sweepWorkspacesOnStartup` runs in `wire.js` after
+  `reconcileOnStartup` + `createGit`. Prunes registered/leftover worktrees
+  under `worktreesDir` with no live (`pr_open`) run and clears stale
+  `.git/*.lock`. Hardened after a safety review: realpath-normalized
+  comparisons (symlink-safe), absolute/non-empty `worktreesDir` guard,
+  boundary-aware containment, never targets the clone or a live worktree,
+  NUL-delimited porcelain, `lstat` (no symlink follow), removal gated on
+  `git worktree remove` success. 8 sweep tests incl. 4 adversarial
+  data-loss cases.
+
 ## Open follow-ups
-2. **decompose → poller TOCTOU on `issue_deps`** (review Important #3).
-   `decompose` labels each sub-issue before all `issue_deps` rows are
-   inserted; a poll tick in that window could enqueue a dependent as
-   `queued` instead of `blocked`. Fix: create all sub-issues, insert all
-   deps, THEN label.
-3. **Startup orphan-worktree prune + stale git-lock sweep**
-   (spec lines 74, 187). `reconcileOnStartup` only re-queues stranded DB
-   rows; it does not prune disk worktrees with no live run or clear stale
-   `.git/*.lock`. Hygiene, not correctness.
-4. (Aspiration) crash recovery resumes from `queued`, not last completed
-   stage (spec line 227) — deliberate, documented, safe (idempotent
-   per-attempt worktree path). Optional optimization only.
+- (Aspiration) crash recovery resumes from `queued`, not last completed
+  stage (spec line 227). **Recommendation: keep as-is — do not implement.**
+  It is deliberate and safe (per-attempt worktree path is idempotent; a
+  clean re-run from `queued` is correct). Resume-from-stage would add
+  artifact-driven stage-skipping branches across the executor state
+  machine — real complexity and risk for a re-run that, in practice,
+  costs one extra spec+plan/implement pass only after a mid-run crash.
+  Not a defect; tracked only so the choice stays visible.
