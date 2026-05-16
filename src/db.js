@@ -4,7 +4,8 @@ import Database from "better-sqlite3";
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY, slug TEXT UNIQUE, repo TEXT, local_path TEXT,
-  watch_label TEXT, base_branch TEXT, created_at TEXT);
+  watch_label TEXT, base_branch TEXT, preview_branch TEXT, preview_url TEXT,
+  created_at TEXT);
 CREATE TABLE IF NOT EXISTS runs (
   id INTEGER PRIMARY KEY, project_id INTEGER, issue_number INTEGER,
   parent_run_id INTEGER, state TEXT, worktree_path TEXT, branch TEXT,
@@ -28,5 +29,15 @@ export function openDb(path) {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);
+  // Idempotent migration: add preview columns to pre-existing projects tables
+  const existingCols = db
+    .prepare("PRAGMA table_info(projects)")
+    .all()
+    .map((r) => r.name);
+  for (const col of ["preview_branch", "preview_url"]) {
+    if (!existingCols.includes(col)) {
+      db.exec(`ALTER TABLE projects ADD COLUMN ${col} TEXT`);
+    }
+  }
   return db;
 }
