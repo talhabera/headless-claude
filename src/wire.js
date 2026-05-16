@@ -58,7 +58,7 @@ export function buildAutonomous({ env = process.env } = {}) {
   const prSweep = createPrSweep({ db, gh, workspace, stages, config });
 
   function mount(app) {
-    mountApi(app, { db, projects, poller, scheduler });
+    mountApi(app, { db, projects, poller, scheduler, executor });
   }
 
   return { config, db, projects, workspace, executor, scheduler, poller, prSweep, mount };

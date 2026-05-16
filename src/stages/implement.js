@@ -17,7 +17,7 @@ Output ONLY this block at the end:
 RESULT>>>`;
 }
 
-export async function runImplement({ db, run, claude, cwd, timeoutMs }) {
+export async function runImplement({ db, run, claude, cwd, timeoutMs, signal }) {
   const plan =
     db
       .prepare("SELECT content FROM run_artifacts WHERE run_id=? AND kind='plan'")
@@ -26,7 +26,9 @@ export async function runImplement({ db, run, claude, cwd, timeoutMs }) {
     cwd,
     prompt: buildImplementPrompt(plan),
     timeoutMs,
+    signal,
   });
+  if (res.cancelled) throw new Error("implement: cancelled");
   if (res.timedOut) throw new Error("implement: timed out");
   if (res.code !== 0)
     throw new Error(`implement: claude exited ${res.code}: ${res.stderr.trim()}`);
