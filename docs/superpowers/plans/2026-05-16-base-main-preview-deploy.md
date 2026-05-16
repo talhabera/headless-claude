@@ -1,0 +1,22 @@
+# Base=main + preview-deploy gate + stage hardening — plan
+
+Increment on the autonomous subsystem. Branch `feature/base-main-preview-deploy`.
+
+## Decisions (locked via brainstorming)
+- Work/PR base branch is **`main`** (not the preview branch). Existing default already `main`; the live `acme-web` project row must be reconfigured.
+- **`preview_branch` + `preview_url` are per-project**, set at `cdev add` (`--preview-branch`, `--preview-url`). Schema migration adds the two columns (idempotent ALTER).
+- New **`previewing`** stage, **required but tolerant**: after `implement` green (+ sync checkpoint, before `pr`): orchestrator pushes the run branch, merges it into `preview_branch`, pushes that, polls `preview_url` until it returns 2xx (deploy smoke), then continues to `pr` (base `main`). If the preview/deploy/push step itself errors (infra) → log a warning and proceed to `pr` (do NOT fail the run). If `preview_branch`/`preview_url` unset → skip the stage entirely.
+- The merge-to-preview + deploy-wait is performed by the **orchestrator** via the git adapter. The model never touches the remote.
+- **Stage agents are forbidden** from `gh pr ...`, `git push`, branch creation, or opening/modifying PRs/issues — the orchestrator owns all remote/PR/preview operations. (Root cause of duplicate PR #34.)
+- The **review gate must verify each issue acceptance-criteria item and the issue's explicit stated conventions** (e.g. i18n/no-hardcoded-strings); verdict `changes-requested` if any is violated. (Root cause of PR #35 hardcoding instead of i18n being approved.)
+
+## Tasks (TDD, fresh implementer each; two-stage review on executor/integration tasks)
+- **T1 — schema migration + config.** `db.js`: idempotent ALTER adding `projects.preview_branch`, `projects.preview_url` (pragma table_info guard). `config.js`: `previewDeployTimeoutMs` (default 600000), `previewPollMs` (default 10000). Tests: columns present, existing rows NULL, defaults.
+- **T2 — register/api/cdev plumbing.** `projects.register({...,previewBranch,previewUrl})` persists; `api.js` POST /projects passes them; `cdev add` `--preview-branch`/`--preview-url` flags; base default stays `main`. Tests.
+- **T3 — stage prompt hardening.** Add an explicit "automated pipeline: do NOT run gh/git push/branch/PR/issue ops; only edit files, run tests/lint/typecheck, commit locally" block to `specPlan/implement/review/resolveConflict` prompts. `spec_plan` prompt must capture the issue's explicit conventions/constraints into spec + acceptance checklist verbatim. `review` prompt must check EACH acceptance item and each stated convention against the diff and return `changes-requested` on any violation. Tests assert the builder strings contain the prohibitions/enforcement.
+- **T4 — preview module.** `src/preview.js`: `mergeToPreview({git,project,runBranch})` (under caller's mutex via workspace) — fetch, push run branch, checkout/ff/merge into `preview_branch`, push it; returns {ok,reason}. `pollUrl(url,{timeoutMs,pollMs,fetchImpl})` → resolves when 2xx or rejects on timeout. Tests with fake git + fake fetch.
+- **T5 — executor `previewing` stage.** `state.js`: add `previewing` → label `in-progress`, non-terminal. Executor: after review-approve, if `project.preview_branch && project.preview_url`: transition `previewing`, run preview (mergeToPreview then pollUrl) wrapped tolerant — any throw → `run_logs` warn, continue; then `pr`. `wire.js` passes git into executor if needed. Tests: implement→previewing→pr happy path; preview infra error still reaches pr_open (tolerant); no preview config → skips straight to pr; prior executor/cancel/rebase tests stay green.
+- **T6 — final review + operational reconfig.** Whole-change review; then (post-merge, operational) reconfigure the live `acme-web` row: `base_branch='main'`, `preview_branch='preprod'`, `preview_url='https://preprod.example.com'` (direct DB UPDATE — preserves run history), restart service.
+
+## Out of scope
+Deep preview functional testing (smoke = URL 2xx only). Auto-closing the existing non-compliant PR #35 (user's call).
