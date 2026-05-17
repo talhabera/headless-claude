@@ -74,8 +74,16 @@ setInterval(
   autonomous.config.prSyncMs,
 ).unref();
 
+setInterval(
+  () =>
+    autonomous.prReview
+      .tick()
+      .catch((e) => console.error("prReview err:", e.message)),
+  autonomous.config.prReviewMs,
+).unref();
+
 console.log(
-  `autonomous-dev wired: poll=${autonomous.config.issuePollMs}ms prSync=${autonomous.config.prSyncMs}ms maxRuns=${autonomous.config.maxConcurrentRuns}`,
+  `autonomous-dev wired: poll=${autonomous.config.issuePollMs}ms prSync=${autonomous.config.prSyncMs}ms prReview=${autonomous.config.prReviewMs}ms maxRuns=${autonomous.config.maxConcurrentRuns}`,
 );
 
 app.get("/status", async (_req, res) => {
