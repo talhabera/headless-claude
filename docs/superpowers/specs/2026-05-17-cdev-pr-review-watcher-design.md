@@ -68,14 +68,14 @@ For each project, for each run with `state='pr_open'`:
    worktree (stable across a pure rebase — `prSweep` rebasing the branch does
    NOT change it, so it never spuriously re-triggers a review) and read PR
    comments (`gh.prComments`). "Work exists" iff:
-   - there is a user comment with id strictly greater than
-     `pr_last_comment_id` whose author ≠ `config.botLogin`, **or**
+   - there is a user comment with `createdAt` strictly greater than
+     `pr_last_comment_at` whose author ≠ resolved bot login, **or**
    - `pr_reviewed_diff_id` ≠ current diff fingerprint.
    If no work and `pr_phase='waiting_user'` → no-op (idempotent; zero tokens).
 3. **New user comment present** → run `runPrFix` with the concatenated new
    comment bodies as the change request → `git commit` (stage, local only) →
    `workspace.pushBranch` → `gh.prComment` reply summarising → set
-   `pr_last_comment_id` to the newest processed id, `pr_review_iterations=0`,
+   `pr_last_comment_at` to the newest processed comment createdAt, `pr_review_iterations=0`,
    `pr_reviewed_diff_id=NULL`, `pr_phase='reviewing'`. If
    `needs_attention=1` AND `attention_reason` is the review-cap marker, clear
    it (a rebase-conflict `needs_attention` is left untouched). Return.
@@ -106,7 +106,7 @@ destructive migration; older rows get NULL/default and behave as a fresh
 | `pr_phase` | TEXT | `reviewing` \| `waiting_user`; gates the loop. NULL ⇒ treated as `reviewing`. |
 | `pr_reviewed_diff_id` | TEXT | git patch-id of `base...HEAD` the last review evaluated; rebase-stable; mismatch ⇒ new commits ⇒ re-review. |
 | `pr_review_iterations` | INTEGER DEFAULT 0 | auto review→fix passes; compared to cap. Reset on new user comment. |
-| `pr_last_comment_id` | TEXT | highest processed PR-comment id; only strictly-newer non-bot comments trigger work. |
+| `pr_last_comment_at` | TEXT | newest processed comment `createdAt` (ISO, lexicographically sortable); only strictly-newer non-bot comments trigger work. |
 
 ## Stages & adapter additions
 
@@ -125,14 +125,17 @@ destructive migration; older rows get NULL/default and behave as a fresh
     returns the comments array (`{id, author:{login}, body, createdAt}`).
   - `prComment(repo, prNumber, body)` → `gh pr comment <prNumber> -R <repo>
     --body <body>`.
+  - `viewer()` → `gh api user -q .login`, returns the authenticated login.
   - No merge method is added anywhere — the bot structurally cannot merge.
 
 (The reviewed-diff fingerprint is computed locally via `git patch-id` in the
 worktree, not through the gh adapter — no PR-head-SHA adapter method needed.)
 
-Bot-authored comments are excluded by discovering the gh-authenticated login
-once at startup (`gh api user -q .login`), cached as `config.botLogin`, and
-filtering it out of the "new user comment" scan.
+Bot-authored comments are excluded by a bot login resolved as:
+`config.botLogin` (env `PR_BOT_LOGIN`) if set, else lazily via `gh.viewer()`
+memoized inside `prReview` on first tick (kept out of `buildAutonomous`
+construction so the composition root stays offline-constructable for tests).
+That login is filtered out of the "new user comment" scan.
 
 ## Config
 
@@ -142,7 +145,7 @@ filtering it out of the "new user comment" scan.
 |---|---|---|
 | `prReviewMs` | `PR_REVIEW_MS` | `120000` |
 | `prReviewMaxIterations` | `PR_REVIEW_MAX_ITERATIONS` | `4` |
-| `botLogin` | (discovered via `gh api user`) | — |
+| `botLogin` | `PR_BOT_LOGIN` | `""` (empty ⇒ lazy `gh.viewer()` in prReview) |
 
 Reuses `stageTimeoutMs`.
 
