@@ -1,10 +1,17 @@
 // test/prReview.test.js
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { openDb } from "../src/db.js";
 import { createPrReview } from "../src/prReview.js";
 
 const CAP_MARKER = "pr-review: iteration cap reached";
+
+// Real on-disk dir so the production existsSync(worktree_path) guard passes
+// for tests that exercise the work paths (path value is never asserted on).
+const WT = mkdtempSync(join(tmpdir(), "prreview-wt-"));
 
 function seed(db, over = {}) {
   db.prepare(
@@ -12,7 +19,7 @@ function seed(db, over = {}) {
   ).run();
   const cols = {
     project_id: 1, issue_number: 8, state: "pr_open", branch: "claude/8-o-r",
-    worktree_path: "/wt", pr_url: "https://github.com/o/r/pull/8",
+    worktree_path: WT, pr_url: "https://github.com/o/r/pull/8",
     attempt: 1, created_at: "t", updated_at: "t",
     pr_phase: null, pr_reviewed_diff_id: null, pr_review_iterations: 0,
     pr_last_comment_at: null, needs_attention: 0, attention_reason: null,
@@ -128,7 +135,7 @@ test("new user comment -> fix + reply + counter reset + re-enter reviewing", asy
   assert.equal(r.pr_last_comment_at, "2026-05-17T10:00:00Z");
 });
 
-test("bot's own comment is ignored (no work)", async () => {
+test("cold-start with only a bot comment: watermark baselined, phase preserved, no stage calls", async () => {
   const db = openDb(":memory:");
   seed(db, { pr_phase: "waiting_user", pr_reviewed_diff_id: "fp1" });
   const d = baseDeps();
@@ -143,6 +150,29 @@ test("bot's own comment is ignored (no work)", async () => {
   await pr.tick();
   const r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(r.pr_phase, "waiting_user");
+  assert.equal(r.pr_last_comment_at, "2026-05-17T11:00:00Z");
+});
+
+test("bot-authored newer comment is filtered out once watermark is set (no Path A)", async () => {
+  const db = openDb(":memory:");
+  seed(db, {
+    pr_phase: "waiting_user",
+    pr_reviewed_diff_id: "fp1",
+    pr_last_comment_at: "2026-05-17T09:00:00Z",
+  });
+  const d = baseDeps();
+  d.gh.prComments = async () => [
+    { id: "B1", author: { login: "bot" }, body: "🤖 still working", createdAt: "2026-05-17T12:00:00Z" },
+  ];
+  const stages = {
+    runPrReview: async () => assert.fail("bot comment must not trigger review"),
+    runPrFix: async () => assert.fail("bot comment must not trigger fix"),
+  };
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  await pr.tick();
+  const r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
+  assert.equal(r.pr_phase, "waiting_user");
+  assert.equal(r.pr_last_comment_at, "2026-05-17T09:00:00Z");
 });
 
 test("PR not OPEN -> skipped entirely", async () => {
@@ -207,4 +237,23 @@ test("review-cap needs_attention cleared by a new user comment; rebase-conflict 
   r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(r.needs_attention, 1);
   assert.match(r.attention_reason, /rebase-resolve/);
+});
+
+test("worktree dir missing on disk -> needs_attention, no GitHub/stage calls", async () => {
+  const db = openDb(":memory:");
+  seed(db, { worktree_path: "/no/such/dir" });
+  let prStatusCalled = false;
+  const d = baseDeps();
+  d.gh.prStatus = async () => { prStatusCalled = true; return { state: "OPEN", number: 8 }; };
+  d.workspace.diffFingerprint = async () => assert.fail("must not fingerprint a missing worktree");
+  const stages = {
+    runPrReview: async () => assert.fail("no review on missing worktree"),
+    runPrFix: async () => assert.fail("no fix on missing worktree"),
+  };
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  await pr.tick();
+  const r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
+  assert.equal(r.needs_attention, 1);
+  assert.match(r.attention_reason, /worktree missing/);
+  assert.equal(prStatusCalled, false);
 });
