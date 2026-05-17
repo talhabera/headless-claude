@@ -11,7 +11,12 @@ CREATE TABLE IF NOT EXISTS runs (
   parent_run_id INTEGER, state TEXT, worktree_path TEXT, branch TEXT,
   pr_url TEXT, attempt INTEGER DEFAULT 1, fail_reason TEXT,
   last_synced_base_sha TEXT, needs_attention INTEGER DEFAULT 0,
-  attention_reason TEXT, created_at TEXT, updated_at TEXT,
+  attention_reason TEXT,
+  pr_phase TEXT,
+  pr_reviewed_diff_id TEXT,
+  pr_review_iterations INTEGER DEFAULT 0,
+  pr_last_comment_at TEXT,
+  created_at TEXT, updated_at TEXT,
   UNIQUE(project_id, issue_number, attempt));
 CREATE TABLE IF NOT EXISTS run_logs (
   id INTEGER PRIMARY KEY, run_id INTEGER, stage TEXT, level TEXT,
@@ -37,6 +42,22 @@ export function openDb(path) {
   for (const col of ["preview_branch", "preview_url"]) {
     if (!existingCols.includes(col)) {
       db.exec(`ALTER TABLE projects ADD COLUMN ${col} TEXT`);
+    }
+  }
+  // Idempotent migration: add pr-review loop columns to pre-existing runs tables
+  const runCols = db
+    .prepare("PRAGMA table_info(runs)")
+    .all()
+    .map((r) => r.name);
+  const runMigrations = [
+    ["pr_phase", "TEXT"],
+    ["pr_reviewed_diff_id", "TEXT"],
+    ["pr_review_iterations", "INTEGER DEFAULT 0"],
+    ["pr_last_comment_at", "TEXT"],
+  ];
+  for (const [col, type] of runMigrations) {
+    if (!runCols.includes(col)) {
+      db.exec(`ALTER TABLE runs ADD COLUMN ${col} ${type}`);
     }
   }
   return db;
