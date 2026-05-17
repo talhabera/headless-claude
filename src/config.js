@@ -20,5 +20,8 @@ export function loadConfig(env = process.env) {
     claudeBin: env.CLAUDE_BIN || "/home/talhabera/.local/bin/claude",
     previewDeployTimeoutMs: num(env.PREVIEW_DEPLOY_TIMEOUT_MS, 600000),
     previewPollMs: num(env.PREVIEW_POLL_MS, 10000),
+    prReviewMs: num(env.PR_REVIEW_MS, 120000),
+    prReviewMaxIterations: num(env.PR_REVIEW_MAX_ITERATIONS, 4),
+    botLogin: env.PR_BOT_LOGIN || "",
   };
 }
