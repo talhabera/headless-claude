@@ -11,6 +11,9 @@ import { createExecutor } from "./executor.js";
 import { createScheduler } from "./scheduler.js";
 import { createPoller } from "./poller.js";
 import { createPrSweep } from "./prSweep.js";
+import { createPrReview } from "./prReview.js";
+import { runPrReview } from "./stages/prReview.js";
+import { runPrFix } from "./stages/prFix.js";
 import { decompose } from "./decompose.js";
 import { runSpecPlan } from "./stages/specPlan.js";
 import { runImplement } from "./stages/implement.js";
@@ -48,6 +51,8 @@ export function buildAutonomous({ env = process.env } = {}) {
     runReview,
     runPr,
     runResolveConflict,
+    runPrReview,
+    runPrFix,
   };
   const executor = createExecutor({
     db, gh, workspace, stages, decompose, config, git, preview,
@@ -59,10 +64,13 @@ export function buildAutonomous({ env = process.env } = {}) {
   });
   const poller = createPoller({ db, gh, workspace });
   const prSweep = createPrSweep({ db, gh, workspace, stages, config });
+  const prReview = createPrReview({
+    db, gh, workspace, stages, claude, config,
+  });
 
   function mount(app) {
     mountApi(app, { db, projects, poller, scheduler, executor });
   }
 
-  return { config, db, projects, workspace, executor, scheduler, poller, prSweep, mount };
+  return { config, db, projects, workspace, executor, scheduler, poller, prSweep, prReview, mount };
 }
