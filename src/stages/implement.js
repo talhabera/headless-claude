@@ -51,7 +51,7 @@ export async function runImplement({ db, run, claude, cwd, timeoutMs, signal }) 
   const parsed = parseResultBlock(res.stdout);
   // Pass condition: new baseline-relative gate OR legacy allGreen back-compat.
   const passesNewGate =
-    parsed.noNewFailures === true && parsed.changeTestsPass !== false;
+    parsed.noNewFailures === true && parsed.changeTestsPass === true;
   const passesLegacyGate = parsed.allGreen === true;
   if (!passesNewGate && !passesLegacyGate) {
     throw new Error(

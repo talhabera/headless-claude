@@ -70,6 +70,42 @@ RESULT>>>`,
   );
 });
 
+// Case 3b: noNewFailures:true but changeTestsPass omitted → rejects (fail-closed)
+test("baseline gate rejects when changeTestsPass omitted", async () => {
+  const db = openDb(":memory:");
+  const run = seed(db);
+  const claude = {
+    run: async () => ({
+      code: 0, timedOut: false, cancelled: false, stderr: "",
+      stdout: `<<<RESULT
+{"noNewFailures":true,"baseline":"clean","summary":"never verified own tests"}
+RESULT>>>`,
+    }),
+  };
+  await assert.rejects(
+    runImplement({ db, run, claude, cwd: "/wt", timeoutMs: 1000 }),
+    /implement: gate not green/,
+  );
+});
+
+// Case 3c: noNewFailures:true, changeTestsPass:null → rejects (fail-closed)
+test("baseline gate rejects when changeTestsPass:null", async () => {
+  const db = openDb(":memory:");
+  const run = seed(db);
+  const claude = {
+    run: async () => ({
+      code: 0, timedOut: false, cancelled: false, stderr: "",
+      stdout: `<<<RESULT
+{"noNewFailures":true,"changeTestsPass":null,"baseline":"clean","summary":"null self-test result"}
+RESULT>>>`,
+    }),
+  };
+  await assert.rejects(
+    runImplement({ db, run, claude, cwd: "/wt", timeoutMs: 1000 }),
+    /implement: gate not green/,
+  );
+});
+
 // Case 4: back-compat — legacy allGreen:true → resolves
 test("back-compat: legacy allGreen:true still passes", async () => {
   const db = openDb(":memory:");
