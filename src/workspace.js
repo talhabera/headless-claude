@@ -80,6 +80,24 @@ export function createWorkspace({ git, mutex, worktreesDir }) {
           git(project.local_path, ["branch", "-D", branch]);
       });
     },
+    diffFingerprint(project, worktreePath) {
+      return lock(project, async () => {
+        const base = project.base_branch || "main";
+        // three-dot: diff against the merge-base so the fingerprint is stable when base advances / the branch is rebased
+        const d = git(worktreePath, ["diff", `origin/${base}...HEAD`]);
+        if (d.code !== 0) {
+          throw new Error(`diff failed: ${d.stderr.trim()}`);
+        }
+        if (!d.stdout.trim()) return "";
+        const p = git(worktreePath, ["patch-id", "--stable"], {
+          input: d.stdout,
+        });
+        if (p.code !== 0) {
+          throw new Error(`patch-id failed: ${p.stderr.trim()}`);
+        }
+        return (p.stdout.trim().split(/\s+/)[0]) || "";
+      });
+    },
     runExclusive(project, fn) {
       return lock(project, fn);
     },

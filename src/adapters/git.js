@@ -8,6 +8,7 @@ export function createGit(bin = "git") {
       encoding: "utf8",
       timeout: opts.timeoutMs || 120000,
       maxBuffer: 64 * 1024 * 1024,
+      ...(opts.input !== undefined ? { input: opts.input } : {}),
     });
     return {
       code: r.status === null ? 1 : r.status,

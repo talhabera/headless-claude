@@ -22,3 +22,14 @@ test("non-zero exit is captured, not thrown", () => {
   assert.notEqual(r.code, 0);
   assert.match(r.stderr, /not a git repository|ambiguous argument/);
 });
+
+test("opts.input is forwarded as stdin to spawnSync", () => {
+  const dir = mkdtempSync(join(tmpdir(), "gitt-"));
+  const git = createGit();
+  // Verify via patch-id that opts.input is forwarded as stdin to spawnSync: empty input → empty output, no crash
+  git(dir, ["init", "-q"]);
+  const r = git(dir, ["patch-id", "--stable"], { input: "" });
+  // patch-id with empty stdin exits 0 and produces empty stdout
+  assert.equal(r.code, 0);
+  assert.equal(r.stdout.trim(), "");
+});

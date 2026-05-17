@@ -38,6 +38,7 @@ Key cross-cutting invariants (touch carefully — they were hardened after revie
 - A watched repo must have **all six labels** (`<watch-label>` + `in-progress`, `pr-open`, `failed`, `decomposed`, `merged`) before its first issue is labeled. Label swaps are `try/catch`-swallowed: a missing label means the pipeline runs but GitHub silently stops mirroring state.
 - `openDb` does not `mkdir` parents. The `AUTONOMOUS_DIR` tree (`~/claude-projects/autonomous/{,projects,worktrees}` by default) must exist or the service crash-loops on boot.
 - The API is eventually-consistent right after `POST /poll` — `{ok:true}` returns before the run row lands. Verify state by waiting/re-reading or querying the SQLite DB directly, not from one immediate `/runs` check.
+- **`better-sqlite3` is a native module pinned to a Node ABI.** The service runs under `/home/talhabera/.local/bin/node` (Node 20, `NODE_MODULE_VERSION` 115); an interactive shell may have a different `node` (e.g. `/usr/bin/node` v22, MODVER 127). Running `npm rebuild`/`npm install` (or `npm test`, if it triggers a rebuild) with the wrong `node` recompiles `better-sqlite3` for that ABI and the **systemd service then crash-loops on boot** (`ERR_DLOPEN_FAILED`). Always rebuild with the service's node: `PATH="/home/talhabera/.local/bin:$PATH" npm rebuild better-sqlite3`, then `systemctl --user restart headless-claude.service`. Run the test suite with that same node too.
 
 ## Conventions
 

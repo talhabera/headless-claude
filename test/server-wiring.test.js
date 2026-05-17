@@ -9,5 +9,7 @@ test("buildAutonomous returns wired components", () => {
   assert.ok(a.poller);
   assert.ok(a.scheduler);
   assert.ok(a.prSweep);
+  assert.ok(a.prReview, "prReview not wired");
+  assert.equal(typeof a.prReview.tick, "function");
   assert.equal(typeof a.mount, "function");
 });

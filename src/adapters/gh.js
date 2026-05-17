@@ -99,5 +99,27 @@ export function createGh({ bin = "gh", runner } = {}) {
       );
       return JSON.parse(out);
     },
+    async prComments(repo, head) {
+      const out = ok(
+        run([
+          "pr", "view", head, "-R", repo, "--json", "comments",
+        ]),
+        "pr comments",
+      );
+      const parsed = JSON.parse(out || "{}");
+      return parsed.comments || [];
+    },
+    async prComment(repo, prNumber, body) {
+      ok(
+        run([
+          "pr", "comment", String(prNumber), "-R", repo, "--body", body,
+        ]),
+        "pr comment",
+      );
+    },
+    async viewer() {
+      const out = ok(run(["api", "user", "-q", ".login"]), "api user");
+      return out.trim();
+    },
   };
 }
