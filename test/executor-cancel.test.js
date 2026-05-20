@@ -3,6 +3,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openDb } from "../src/db.js";
 import { createExecutor } from "../src/executor.js";
+import { createKeyedMutex } from "../src/mutex.js";
+
+const COOLDOWN = { runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 };
 
 function base(db) {
   db.prepare(
@@ -50,7 +53,8 @@ test("cancel while stage is in-flight fails run with reason 'cancelled by user'"
 
   const ex = createExecutor({
     db, gh, workspace: ws, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10000 },
+    config: { stageTimeoutMs: 10000, ...COOLDOWN },
+    runLock: createKeyedMutex(),
   });
 
   // start execute without awaiting
@@ -80,7 +84,8 @@ test("cancel for non-active queued run sets state failed with reason 'cancelled 
 
   const ex = createExecutor({
     db, gh, workspace: ws, stages: {}, decompose: async () => {},
-    config: { stageTimeoutMs: 10000 },
+    config: { stageTimeoutMs: 10000, ...COOLDOWN },
+    runLock: createKeyedMutex(),
   });
 
   const result = ex.cancel(1);
@@ -112,7 +117,8 @@ test("cancel between stages (during prepareClone) still fails the run with 'canc
 
   const ex = createExecutor({
     db, gh, workspace, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10000 },
+    config: { stageTimeoutMs: 10000, ...COOLDOWN },
+    runLock: createKeyedMutex(),
   });
 
   const p = ex.execute(run.id); // do not await — stuck in prepareClone

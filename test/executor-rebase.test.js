@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openDb } from "../src/db.js";
 import { createExecutor } from "../src/executor.js";
+import { createKeyedMutex } from "../src/mutex.js";
 
 function base(db) {
   db.prepare(
@@ -41,7 +42,8 @@ test("conflict at sync checkpoint triggers resolve stage then continues", async 
   };
   const ex = createExecutor({
     db, gh, workspace, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10 },
+    config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 },
+    runLock: createKeyedMutex(),
   });
   await ex.execute(run.id);
   assert.ok(resolveCalled >= 1);
@@ -68,7 +70,8 @@ test("unresolved conflict fails the run", async () => {
   };
   const ex = createExecutor({
     db, gh, workspace, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10 },
+    config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 },
+    runLock: createKeyedMutex(),
   });
   await ex.execute(run.id);
   const r = db.prepare("SELECT state, fail_reason FROM runs WHERE id=1").get();

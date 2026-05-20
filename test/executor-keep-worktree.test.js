@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openDb } from "../src/db.js";
 import { createExecutor } from "../src/executor.js";
+import { createKeyedMutex } from "../src/mutex.js";
 
 test("pr_open keeps the worktree (sweep needs it)", async () => {
   const db = openDb(":memory:");
@@ -31,7 +32,8 @@ test("pr_open keeps the worktree (sweep needs it)", async () => {
   };
   const ex = createExecutor({
     db, gh, workspace, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10 },
+    config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 },
+    runLock: createKeyedMutex(),
   });
   await ex.execute(1);
   assert.equal(db.prepare("SELECT state FROM runs WHERE id=1").get().state, "pr_open");

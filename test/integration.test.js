@@ -6,6 +6,7 @@ import { createExecutor } from "../src/executor.js";
 import { createScheduler } from "../src/scheduler.js";
 import { createPoller } from "../src/poller.js";
 import { reconcileOnStartup } from "../src/reconcile.js";
+import { createKeyedMutex } from "../src/mutex.js";
 
 test("labeled issue flows queued → pr_open via poller+scheduler", async () => {
   const db = openDb(":memory:");
@@ -36,7 +37,8 @@ test("labeled issue flows queued → pr_open via poller+scheduler", async () => 
   };
   const executor = createExecutor({
     db, gh, workspace, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10 },
+    config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 },
+    runLock: createKeyedMutex(),
   });
   const scheduler = createScheduler({ db, executor, maxConcurrentRuns: 2 });
   const poller = createPoller({ db, gh, workspace });
