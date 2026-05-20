@@ -43,3 +43,14 @@ test("openDb migrates a pre-existing runs table WITHOUT cooldown columns", () =>
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("openDb is idempotent — second open does not throw", () => {
+  const dir = mkdtempSync(join(tmpdir(), "hc-cd2-"));
+  const dbPath = join(dir, "test.db");
+  try {
+    openDb(dbPath).close();
+    assert.doesNotThrow(() => openDb(dbPath).close());
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

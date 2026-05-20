@@ -44,7 +44,7 @@ export function openDb(path) {
       db.exec(`ALTER TABLE projects ADD COLUMN ${col} TEXT`);
     }
   }
-  // Idempotent migration: add pr-review loop columns to pre-existing runs tables
+  // Idempotent migration: add pr-review loop + cooldown columns to pre-existing runs tables
   const runCols = db
     .prepare("PRAGMA table_info(runs)")
     .all()
