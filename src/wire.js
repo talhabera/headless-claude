@@ -30,10 +30,15 @@ export function buildAutonomous({ env = process.env } = {}) {
   const db = openDb(config.dbPath);
   reconcileOnStartup(db);
   const mutex = createKeyedMutex();
+  const runLock = createKeyedMutex();
   const git = createGit();
   sweepWorkspacesOnStartup({ db, git, config });
   const gh = createGh({ bin: config.ghBin });
-  const claude = createClaude({ bin: config.claudeBin });
+  const claude = createClaude({
+    bin: config.claudeBin,
+    maxConcurrent: config.maxConcurrentRuns,
+    minSpawnIntervalMs: config.claudeMinSpawnIntervalMs,
+  });
   const projects = createProjects({
     db,
     git,
@@ -55,7 +60,7 @@ export function buildAutonomous({ env = process.env } = {}) {
     runPrFix,
   };
   const executor = createExecutor({
-    db, gh, workspace, stages, decompose, config, git, preview,
+    db, gh, workspace, stages, decompose, config, git, preview, runLock,
   });
   const scheduler = createScheduler({
     db,
@@ -63,9 +68,9 @@ export function buildAutonomous({ env = process.env } = {}) {
     maxConcurrentRuns: config.maxConcurrentRuns,
   });
   const poller = createPoller({ db, gh, workspace });
-  const prSweep = createPrSweep({ db, gh, workspace, stages, config });
+  const prSweep = createPrSweep({ db, gh, workspace, stages, config, runLock });
   const prReview = createPrReview({
-    db, gh, workspace, stages, claude, config,
+    db, gh, workspace, stages, claude, config, runLock,
   });
 
   function mount(app) {

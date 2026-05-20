@@ -1,7 +1,8 @@
 // src/executor.js
 import { transition, LABEL_FOR } from "./state.js";
+import { recordSuccess, recordFailure } from "./runCooldown.js";
 
-export function createExecutor({ db, gh, workspace, stages, decompose, config, git, preview }) {
+export function createExecutor({ db, gh, workspace, stages, decompose, config, git, preview, runLock, now = () => Date.now() }) {
   const getRun = (id) => db.prepare("SELECT * FROM runs WHERE id=?").get(id);
   const getProject = (pid) =>
     db.prepare("SELECT * FROM projects WHERE id=?").get(pid);
@@ -74,8 +75,10 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config, g
   }
 
   async function execute(runId) {
+    return runLock.runExclusive(runId, async () => {
     const ac = new AbortController();
     active.set(runId, ac);
+    let success = false;
     try {
       let run = getRun(runId);
       const project = getProject(run.project_id);
@@ -104,6 +107,7 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config, g
           transition(db, run.id, "decomposing", { stage: "decomposing", message: "splitting" });
           await decompose({ db, gh, project, parentRun: run, subIssues: sp.subIssues });
           transition(db, run.id, "decomposed", { stage: "decomposing", message: "done" });
+          success = true;
           try {
             await gh.swapLabel(project.repo, run.issue_number, "in-progress", "decomposed");
           } catch {}
@@ -176,6 +180,7 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config, g
           gh, issue,
         });
         transition(db, run.id, "pr_open", { stage: "pr", message: pr.prUrl });
+        success = true;
         try {
           await gh.swapLabel(project.repo, run.issue_number, "in-progress", "pr-open");
         } catch {}
@@ -186,8 +191,11 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config, g
         await fail(runId, getProject(getRun(runId).project_id), reason);
       }
     } finally {
+      if (success) recordSuccess(db, runId, config, now());
+      else recordFailure(db, runId, config, now());
       active.delete(runId);
     }
+    });
   }
 
   function cancel(runId) {

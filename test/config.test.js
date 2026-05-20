@@ -23,3 +23,19 @@ test("env overrides parse correctly", () => {
   assert.equal(c.keepFailedWorktree, true);
   assert.equal(c.projectsDir, "/tmp/p");
 });
+
+test("loadConfig reads new throttle env vars with sensible defaults", () => {
+  const c = loadConfig({});
+  assert.equal(c.runCooldownMs, 180_000);
+  assert.equal(c.runCooldownMaxMs, 3_600_000);
+  assert.equal(c.claudeMinSpawnIntervalMs, 180_000);
+
+  const overridden = loadConfig({
+    RUN_COOLDOWN_MS: "60000",
+    RUN_COOLDOWN_MAX_MS: "1800000",
+    CLAUDE_MIN_SPAWN_INTERVAL_MS: "30000",
+  });
+  assert.equal(overridden.runCooldownMs, 60_000);
+  assert.equal(overridden.runCooldownMaxMs, 1_800_000);
+  assert.equal(overridden.claudeMinSpawnIntervalMs, 30_000);
+});

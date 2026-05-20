@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openDb } from "../src/db.js";
+import { createKeyedMutex } from "../src/mutex.js";
 import { createPrSweep } from "../src/prSweep.js";
 
 function seed(db) {
@@ -24,7 +25,7 @@ test("BEHIND clean PR is rebased and force-pushed", async () => {
     rebaseOnBase: async () => ({ conflicted: false }),
     pushBranch: async () => (pushed = true),
   };
-  const sweep = createPrSweep({ db, gh, workspace, stages: {}, config: { stageTimeoutMs: 10 } });
+  const sweep = createPrSweep({ db, gh, workspace, stages: {}, config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 }, runLock: createKeyedMutex() });
   await sweep.tick();
   assert.equal(pushed, true);
 });
@@ -47,7 +48,7 @@ test("conflicting PR runs resolve stage then pushes", async () => {
       return { resolved: true };
     },
   };
-  const sweep = createPrSweep({ db, gh, workspace, stages, config: { stageTimeoutMs: 10 } });
+  const sweep = createPrSweep({ db, gh, workspace, stages, config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 }, runLock: createKeyedMutex() });
   await sweep.tick();
   assert.equal(resolved, true);
   assert.equal(pushed, true);
@@ -71,7 +72,7 @@ test("unresolvable conflict flags needs_attention, no push", async () => {
       throw new Error("rebase-resolve: semantic conflict");
     },
   };
-  const sweep = createPrSweep({ db, gh, workspace, stages, config: { stageTimeoutMs: 10 } });
+  const sweep = createPrSweep({ db, gh, workspace, stages, config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 }, runLock: createKeyedMutex() });
   await sweep.tick();
   assert.equal(pushed, false);
   const r = db.prepare("SELECT needs_attention, attention_reason FROM runs WHERE issue_number=8").get();

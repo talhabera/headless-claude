@@ -1,9 +1,10 @@
 // src/prReview.js
 import { existsSync } from "node:fs";
+import { recordSuccess, recordFailure } from "./runCooldown.js";
 
 const CAP_MARKER = "pr-review: iteration cap reached";
 
-export function createPrReview({ db, gh, workspace, stages, claude, config }) {
+export function createPrReview({ db, gh, workspace, stages, claude, config, runLock, now = () => Date.now() }) {
   let botLoginCache;
 
   async function resolveBotLogin() {
@@ -17,23 +18,37 @@ export function createPrReview({ db, gh, workspace, stages, claude, config }) {
     }
   }
 
+  let running = false;
+
   async function tick() {
-    const projects = db.prepare("SELECT * FROM projects").all();
-    for (const p of projects) {
-      const runs = db
-        .prepare("SELECT * FROM runs WHERE project_id=? AND state='pr_open'")
-        .all(p.id);
-      for (const r of runs) {
-        try {
-          await handleRun(p, r);
-        } catch (e) {
-          db.prepare(
-            "UPDATE runs SET updated_at=? WHERE id=?",
-          ).run(new Date().toISOString(), r.id);
-          // eslint-disable-next-line no-console
-          console.error(`prReview run ${r.id}: ${e.message}`);
+    if (running) return;
+    running = true;
+    try {
+      const projects = db.prepare("SELECT * FROM projects").all();
+      const nowIso = new Date(now()).toISOString();
+      for (const p of projects) {
+        const runs = db
+          .prepare(
+            `SELECT * FROM runs
+               WHERE project_id=? AND state='pr_open'
+                 AND (next_attempt_at IS NULL OR next_attempt_at <= ?)`,
+          )
+          .all(p.id, nowIso);
+        for (const r of runs) {
+          await runLock.runExclusive(r.id, async () => {
+            try {
+              const didWork = await handleRun(p, r);
+              if (didWork) recordSuccess(db, r.id, config, now());
+            } catch (e) {
+              recordFailure(db, r.id, config, now());
+              // eslint-disable-next-line no-console
+              console.error(`prReview run ${r.id}: ${e.message}`);
+            }
+          });
         }
       }
+    } finally {
+      running = false;
     }
   }
 
@@ -142,7 +157,7 @@ export function createPrReview({ db, gh, workspace, stages, claude, config }) {
             : `Attempted your comment(s) but the change gate did not pass: ${fix.summary}`,
         );
       } catch {}
-      return;
+      return true;
     }
 
     const fingerprint = await workspace.diffFingerprint(p, r.worktree_path);
@@ -178,7 +193,7 @@ export function createPrReview({ db, gh, workspace, stages, claude, config }) {
         prNumber,
         "✅ automated review passed — waiting for your comments.",
       );
-      return;
+      return true;
     }
 
     const iterations = r.pr_review_iterations || 0;
@@ -199,7 +214,7 @@ export function createPrReview({ db, gh, workspace, stages, claude, config }) {
         prNumber,
         `Automated review hit the ${config.prReviewMaxIterations}-iteration cap. Remaining findings — waiting for your guidance:\n${findings}`,
       );
-      return;
+      return true;
     }
 
     const fix = await stages.runPrFix({
@@ -227,6 +242,7 @@ export function createPrReview({ db, gh, workspace, stages, claude, config }) {
         );
       } catch {}
     }
+    return true;
   }
 
   return { tick };

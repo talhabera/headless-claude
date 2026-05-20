@@ -3,6 +3,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { openDb } from "../src/db.js";
 import { createExecutor } from "../src/executor.js";
+import { createKeyedMutex } from "../src/mutex.js";
+
+const COOLDOWN = { runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -81,8 +84,9 @@ test("preview happy path: mergeToPreview ok + pollUrl ok → pr_open with live l
   const stages = makeStages();
   const ex = createExecutor({
     db, gh, workspace: ws, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500 },
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
+    runLock: createKeyedMutex(),
   });
 
   await ex.execute(run.id);
@@ -119,8 +123,9 @@ test("preview tolerant on merge fail: run still reaches pr_open with warn log", 
   const stages = makeStages();
   const ex = createExecutor({
     db, gh, workspace: ws, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500 },
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
+    runLock: createKeyedMutex(),
   });
 
   await ex.execute(run.id);
@@ -155,8 +160,9 @@ test("preview tolerant on pollUrl not live: run still reaches pr_open with warn 
   const stages = makeStages();
   const ex = createExecutor({
     db, gh, workspace: ws, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500 },
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
+    runLock: createKeyedMutex(),
   });
 
   await ex.execute(run.id);
@@ -188,8 +194,9 @@ test("preview tolerant on thrown error: run still reaches pr_open with warn log"
   const stages = makeStages();
   const ex = createExecutor({
     db, gh, workspace: ws, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500 },
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
+    runLock: createKeyedMutex(),
   });
 
   await ex.execute(run.id);
@@ -219,8 +226,9 @@ test("preview skipped when project has no preview_branch/preview_url", async () 
   const stages = makeStages();
   const ex = createExecutor({
     db, gh, workspace: ws, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500 },
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
+    runLock: createKeyedMutex(),
   });
 
   await ex.execute(run.id);
@@ -256,8 +264,9 @@ test("cancel during preview pollUrl → run fails 'cancelled by user', runPr NOT
   const stages = makeStages();
   const ex = createExecutor({
     db, gh, workspace: ws, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 600000, previewPollMs: 500 },
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 600000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
+    runLock: createKeyedMutex(),
   });
 
   const p = ex.execute(run.id); // do not await — stuck in pollUrl
@@ -294,8 +303,9 @@ test("cancel during preview mergeToPreview → run fails 'cancelled by user', ru
   const stages = makeStages();
   const ex = createExecutor({
     db, gh, workspace: ws, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 600000, previewPollMs: 500 },
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 600000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
+    runLock: createKeyedMutex(),
   });
 
   const p = ex.execute(run.id);
@@ -329,8 +339,9 @@ test("non-abort thrown error during preview is STILL tolerated → pr_open", asy
   const stages = makeStages();
   const ex = createExecutor({
     db, gh, workspace: ws, stages, decompose: async () => {},
-    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500 },
+    config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
+    runLock: createKeyedMutex(),
   });
 
   await ex.execute(run.id);

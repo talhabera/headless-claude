@@ -11,13 +11,17 @@ export function createScheduler({ db, executor, maxConcurrentRuns }) {
   function claimNext(extraExcluded) {
     const excluded = new Set(inFlight);
     if (extraExcluded) for (const id of extraExcluded) excluded.add(id);
+    const now = new Date().toISOString();
+    const placeholders = [...excluded].map(() => "?").join(",") || "0";
     const row = db
       .prepare(
-        `SELECT id FROM runs WHERE state='queued' AND id NOT IN (${
-          [...excluded].map(() => "?").join(",") || "0"
-        }) ORDER BY id LIMIT 1`,
+        `SELECT id FROM runs
+           WHERE state='queued'
+             AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+             AND id NOT IN (${placeholders})
+           ORDER BY id LIMIT 1`,
       )
-      .get(...excluded);
+      .get(now, ...excluded);
     return row ? row.id : null;
   }
 
