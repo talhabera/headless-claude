@@ -23,5 +23,8 @@ export function loadConfig(env = process.env) {
     prReviewMs: num(env.PR_REVIEW_MS, 120000),
     prReviewMaxIterations: num(env.PR_REVIEW_MAX_ITERATIONS, 4),
     botLogin: env.PR_BOT_LOGIN || "",
+    runCooldownMs: num(env.RUN_COOLDOWN_MS, 180000),
+    runCooldownMaxMs: num(env.RUN_COOLDOWN_MAX_MS, 3600000),
+    claudeMinSpawnIntervalMs: num(env.CLAUDE_MIN_SPAWN_INTERVAL_MS, 180000),
   };
 }
