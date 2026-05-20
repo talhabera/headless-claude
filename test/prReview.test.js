@@ -5,6 +5,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDb } from "../src/db.js";
+import { createKeyedMutex } from "../src/mutex.js";
 import { createPrReview } from "../src/prReview.js";
 
 const CAP_MARKER = "pr-review: iteration cap reached";
@@ -47,7 +48,7 @@ function baseDeps(over = {}) {
       runExclusive: (_p, fn) => fn(),
       ...over.workspace,
     },
-    config: { prReviewMaxIterations: 4, stageTimeoutMs: 10, botLogin: "bot" },
+    config: { prReviewMaxIterations: 4, stageTimeoutMs: 10, botLogin: "bot", runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 },
   };
 }
 
@@ -61,7 +62,7 @@ test("first open, reviewing phase, changes-requested under cap -> fix + push + i
     runPrFix: async () => { fixed = true; return { ok: true, summary: "did it" }; },
   };
   d.workspace.pushBranch = async () => { pushed = true; };
-  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   assert.equal(fixed, true);
   assert.equal(pushed, true);
@@ -80,7 +81,7 @@ test("approve -> waiting_user + one summary comment + diff id recorded", async (
     runPrReview: async () => ({ verdict: "approve", findings: [], notes: "ok" }),
     runPrFix: async () => assert.fail("should not fix on approve"),
   };
-  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   const r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(r.pr_phase, "waiting_user");
@@ -100,7 +101,7 @@ test("cap reached -> needs_attention + findings comment, no fix", async () => {
     runPrReview: async () => ({ verdict: "changes-requested", findings: ["still bad"], notes: "n" }),
     runPrFix: async () => assert.fail("must not fix past cap"),
   };
-  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   const r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(r.needs_attention, 1);
@@ -124,7 +125,7 @@ test("new user comment -> fix + reply + counter reset + re-enter reviewing", asy
     runPrReview: async () => assert.fail("comment path must not review first"),
     runPrFix: async () => ({ ok: true, summary: "applied comment" }),
   };
-  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   const r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(pushed, true);
@@ -146,7 +147,7 @@ test("cold-start with only a bot comment: watermark baselined, phase preserved, 
     runPrReview: async () => assert.fail("no review expected"),
     runPrFix: async () => assert.fail("no fix expected"),
   };
-  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   const r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(r.pr_phase, "waiting_user");
@@ -168,7 +169,7 @@ test("bot-authored newer comment is filtered out once watermark is set (no Path 
     runPrReview: async () => assert.fail("bot comment must not trigger review"),
     runPrFix: async () => assert.fail("bot comment must not trigger fix"),
   };
-  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   const r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(r.pr_phase, "waiting_user");
@@ -184,7 +185,7 @@ test("PR not OPEN -> skipped entirely", async () => {
     runPrReview: async () => assert.fail("no review on closed PR"),
     runPrFix: async () => assert.fail("no fix on closed PR"),
   };
-  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   assert.ok(true);
 });
@@ -198,7 +199,7 @@ test("waiting_user, no new comment, unchanged diff -> pure no-op", async () => {
     runPrReview: async () => { calls++; return { verdict: "approve" }; },
     runPrFix: async () => { calls++; return { ok: true }; },
   };
-  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   assert.equal(calls, 0);
 });
@@ -216,7 +217,7 @@ test("review-cap needs_attention cleared by a new user comment; rebase-conflict 
     runPrReview: async () => assert.fail("comment path first"),
     runPrFix: async () => ({ ok: true, summary: "s" }),
   };
-  let pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  let pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   let r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(r.needs_attention, 0);
@@ -232,7 +233,7 @@ test("review-cap needs_attention cleared by a new user comment; rebase-conflict 
     runPrReview: async () => assert.fail("skip while attention"),
     runPrFix: async () => assert.fail("skip while attention"),
   };
-  pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(r.needs_attention, 1);
@@ -250,7 +251,7 @@ test("worktree dir missing on disk -> needs_attention, no GitHub/stage calls", a
     runPrReview: async () => assert.fail("no review on missing worktree"),
     runPrFix: async () => assert.fail("no fix on missing worktree"),
   };
-  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config });
+  const pr = createPrReview({ db, gh: d.gh, workspace: d.workspace, stages, claude: {}, config: d.config, runLock: createKeyedMutex() });
   await pr.tick();
   const r = db.prepare("SELECT * FROM runs WHERE issue_number=8").get();
   assert.equal(r.needs_attention, 1);
