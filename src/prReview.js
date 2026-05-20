@@ -37,8 +37,8 @@ export function createPrReview({ db, gh, workspace, stages, claude, config, runL
         for (const r of runs) {
           await runLock.runExclusive(r.id, async () => {
             try {
-              await handleRun(p, r);
-              recordSuccess(db, r.id, config, now());
+              const didWork = await handleRun(p, r);
+              if (didWork) recordSuccess(db, r.id, config, now());
             } catch (e) {
               recordFailure(db, r.id, config, now());
               // eslint-disable-next-line no-console
@@ -157,7 +157,7 @@ export function createPrReview({ db, gh, workspace, stages, claude, config, runL
             : `Attempted your comment(s) but the change gate did not pass: ${fix.summary}`,
         );
       } catch {}
-      return;
+      return true;
     }
 
     const fingerprint = await workspace.diffFingerprint(p, r.worktree_path);
@@ -193,7 +193,7 @@ export function createPrReview({ db, gh, workspace, stages, claude, config, runL
         prNumber,
         "✅ automated review passed — waiting for your comments.",
       );
-      return;
+      return true;
     }
 
     const iterations = r.pr_review_iterations || 0;
@@ -214,7 +214,7 @@ export function createPrReview({ db, gh, workspace, stages, claude, config, runL
         prNumber,
         `Automated review hit the ${config.prReviewMaxIterations}-iteration cap. Remaining findings — waiting for your guidance:\n${findings}`,
       );
-      return;
+      return true;
     }
 
     const fix = await stages.runPrFix({
@@ -242,6 +242,7 @@ export function createPrReview({ db, gh, workspace, stages, claude, config, runL
         );
       } catch {}
     }
+    return true;
   }
 
   return { tick };
