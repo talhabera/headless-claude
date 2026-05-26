@@ -29,7 +29,6 @@ test("executor failure path records cooldown failure", async () => {
     gh: { issue: async () => { throw new Error("gh down"); }, swapLabel: async () => {}, comment: async () => {} },
     workspace: { prepareClone: async () => "sha", addWorktree: async () => ({ path: "/tmp/wt", branch: "claude/77-p" }), removeWorktree: async () => {} },
     stages: { claude: {} },
-    decompose: async () => {},
     config: CFG,
     git: () => ({ code: 0, stdout: "", stderr: "" }),
     preview: { maybeDeployPreview: async () => {} },

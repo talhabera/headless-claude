@@ -14,10 +14,10 @@ function seed(db) {
   return 1;
 }
 
-test("label mapping covers every state", () => {
+test("label mapping covers every reachable state", () => {
   for (const s of [
-    "queued", "blocked", "spec_plan", "implementing", "reviewing",
-    "decomposing", "pr_open", "decomposed", "merged", "failed",
+    "queued", "spec_plan", "implementing", "reviewing",
+    "pr_open", "merged", "failed",
   ]) {
     assert.ok(LABEL_FOR[s], `missing label for ${s}`);
   }
@@ -41,6 +41,6 @@ test("transition updates state and writes a log row", () => {
 test("TERMINAL set is correct", () => {
   assert.deepEqual(
     [...TERMINAL].sort(),
-    ["decomposed", "failed", "merged", "pr_open"],
+    ["failed", "merged", "pr_open"],
   );
 });

@@ -10,11 +10,6 @@ import { createWorkspace } from "./workspace.js";
 import { createExecutor } from "./executor.js";
 import { createScheduler } from "./scheduler.js";
 import { createPoller } from "./poller.js";
-import { createPrSweep } from "./prSweep.js";
-import { createPrReview } from "./prReview.js";
-import { runPrReview } from "./stages/prReview.js";
-import { runPrFix } from "./stages/prFix.js";
-import { decompose } from "./decompose.js";
 import { runSpecPlan } from "./stages/specPlan.js";
 import { runImplement } from "./stages/implement.js";
 import { runReview } from "./stages/review.js";
@@ -56,11 +51,9 @@ export function buildAutonomous({ env = process.env } = {}) {
     runReview,
     runPr,
     runResolveConflict,
-    runPrReview,
-    runPrFix,
   };
   const executor = createExecutor({
-    db, gh, workspace, stages, decompose, config, git, preview, runLock,
+    db, gh, workspace, stages, config, git, preview, runLock,
   });
   const scheduler = createScheduler({
     db,
@@ -68,14 +61,10 @@ export function buildAutonomous({ env = process.env } = {}) {
     maxConcurrentRuns: config.maxConcurrentRuns,
   });
   const poller = createPoller({ db, gh, workspace });
-  const prSweep = createPrSweep({ db, gh, workspace, stages, config, runLock });
-  const prReview = createPrReview({
-    db, gh, workspace, stages, claude, config, runLock,
-  });
 
   function mount(app) {
     mountApi(app, { db, projects, poller, scheduler, executor });
   }
 
-  return { config, db, projects, workspace, executor, scheduler, poller, prSweep, prReview, mount };
+  return { config, db, projects, workspace, executor, scheduler, poller, mount };
 }

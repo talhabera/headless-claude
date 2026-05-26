@@ -14,7 +14,7 @@ function seed(db) {
   return db.prepare("SELECT * FROM runs WHERE id=1").get();
 }
 
-test("small: persists artifacts and returns size=small", async () => {
+test("persists artifacts", async () => {
   const db = openDb(":memory:");
   const run = seed(db);
   const claude = {
@@ -22,18 +22,17 @@ test("small: persists artifacts and returns size=small", async () => {
       code: 0,
       timedOut: false,
       stdout: `<<<RESULT
-{"size":"small","spec":"SPEC TEXT","plan":"PLAN TEXT",
+{"spec":"SPEC TEXT","plan":"PLAN TEXT",
 "acceptanceChecklist":["does X","does Y"],"selfReviewPassed":true}
 RESULT>>>`,
       stderr: "",
     }),
   };
-  const r = await runSpecPlan({
+  await runSpecPlan({
     db, run, claude,
     issue: { number: 3, title: "T", body: "B" },
     cwd: "/wt", timeoutMs: 1000,
   });
-  assert.equal(r.size, "small");
   const spec = db
     .prepare("SELECT content FROM run_artifacts WHERE run_id=1 AND kind='spec'")
     .get();
@@ -53,7 +52,7 @@ test("failed self-review throws gate error", async () => {
     run: async () => ({
       code: 0, timedOut: false, stderr: "",
       stdout: `<<<RESULT
-{"size":"small","spec":"s","plan":"p","acceptanceChecklist":[],"selfReviewPassed":false}
+{"spec":"s","plan":"p","acceptanceChecklist":[],"selfReviewPassed":false}
 RESULT>>>`,
     }),
   };
@@ -81,4 +80,12 @@ test("timeout throws", async () => {
     }),
     /spec_plan: timed out/,
   );
+});
+
+test("prompt no longer mentions decomposition / sub-issues", async () => {
+  const { buildSpecPlanPrompt } = await import("../src/stages/specPlan.js");
+  const prompt = buildSpecPlanPrompt({ number: 1, title: "t", body: "b" });
+  assert.ok(!/subIssues/i.test(prompt), "prompt must not mention subIssues");
+  assert.ok(!/"size"/.test(prompt), "prompt must not declare a size field in RESULT schema");
+  assert.ok(!/dependsOn/i.test(prompt), "prompt must not mention dependsOn");
 });

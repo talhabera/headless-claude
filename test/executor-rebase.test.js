@@ -31,7 +31,7 @@ test("conflict at sync checkpoint triggers resolve stage then continues", async 
     rebaseOnBase: async () => ({ conflicted: true, files: ["x.js"] }),
   };
   const stages = {
-    runSpecPlan: async () => ({ size: "small", subIssues: [] }),
+    runSpecPlan: async () => ({}),
     runImplement: async () => ({ allGreen: true }),
     runReview: async () => ({ verdict: "approve", notes: "", checklist: [] }),
     runPr: async () => ({ prUrl: "u" }),
@@ -41,7 +41,7 @@ test("conflict at sync checkpoint triggers resolve stage then continues", async 
     },
   };
   const ex = createExecutor({
-    db, gh, workspace, stages, decompose: async () => {},
+    db, gh, workspace, stages,
     config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 },
     runLock: createKeyedMutex(),
   });
@@ -60,7 +60,7 @@ test("unresolved conflict fails the run", async () => {
     rebaseOnBase: async () => ({ conflicted: true, files: ["x.js"] }),
   };
   const stages = {
-    runSpecPlan: async () => ({ size: "small", subIssues: [] }),
+    runSpecPlan: async () => ({}),
     runImplement: async () => ({ allGreen: true }),
     runReview: async () => ({ verdict: "approve" }),
     runPr: async () => ({ prUrl: "u" }),
@@ -69,7 +69,7 @@ test("unresolved conflict fails the run", async () => {
     },
   };
   const ex = createExecutor({
-    db, gh, workspace, stages, decompose: async () => {},
+    db, gh, workspace, stages,
     config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 },
     runLock: createKeyedMutex(),
   });

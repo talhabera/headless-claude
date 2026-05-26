@@ -54,7 +54,7 @@ function makeStages(runPrSpy) {
     return { prUrl: "u" };
   };
   return {
-    runSpecPlan: async () => ({ size: "small", subIssues: [] }),
+    runSpecPlan: async () => ({}),
     runImplement: async () => ({ allGreen: true }),
     runReview: async () => ({ verdict: "approve", notes: "", checklist: [] }),
     runPr,
@@ -83,7 +83,7 @@ test("preview happy path: mergeToPreview ok + pollUrl ok → pr_open with live l
 
   const stages = makeStages();
   const ex = createExecutor({
-    db, gh, workspace: ws, stages, decompose: async () => {},
+    db, gh, workspace: ws, stages,
     config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
     runLock: createKeyedMutex(),
@@ -122,7 +122,7 @@ test("preview tolerant on merge fail: run still reaches pr_open with warn log", 
 
   const stages = makeStages();
   const ex = createExecutor({
-    db, gh, workspace: ws, stages, decompose: async () => {},
+    db, gh, workspace: ws, stages,
     config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
     runLock: createKeyedMutex(),
@@ -159,7 +159,7 @@ test("preview tolerant on pollUrl not live: run still reaches pr_open with warn 
 
   const stages = makeStages();
   const ex = createExecutor({
-    db, gh, workspace: ws, stages, decompose: async () => {},
+    db, gh, workspace: ws, stages,
     config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
     runLock: createKeyedMutex(),
@@ -193,7 +193,7 @@ test("preview tolerant on thrown error: run still reaches pr_open with warn log"
 
   const stages = makeStages();
   const ex = createExecutor({
-    db, gh, workspace: ws, stages, decompose: async () => {},
+    db, gh, workspace: ws, stages,
     config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
     runLock: createKeyedMutex(),
@@ -225,7 +225,7 @@ test("preview skipped when project has no preview_branch/preview_url", async () 
 
   const stages = makeStages();
   const ex = createExecutor({
-    db, gh, workspace: ws, stages, decompose: async () => {},
+    db, gh, workspace: ws, stages,
     config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
     runLock: createKeyedMutex(),
@@ -263,7 +263,7 @@ test("cancel during preview pollUrl → run fails 'cancelled by user', runPr NOT
 
   const stages = makeStages();
   const ex = createExecutor({
-    db, gh, workspace: ws, stages, decompose: async () => {},
+    db, gh, workspace: ws, stages,
     config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 600000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
     runLock: createKeyedMutex(),
@@ -302,7 +302,7 @@ test("cancel during preview mergeToPreview → run fails 'cancelled by user', ru
 
   const stages = makeStages();
   const ex = createExecutor({
-    db, gh, workspace: ws, stages, decompose: async () => {},
+    db, gh, workspace: ws, stages,
     config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 600000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
     runLock: createKeyedMutex(),
@@ -338,7 +338,7 @@ test("non-abort thrown error during preview is STILL tolerated → pr_open", asy
 
   const stages = makeStages();
   const ex = createExecutor({
-    db, gh, workspace: ws, stages, decompose: async () => {},
+    db, gh, workspace: ws, stages,
     config: { stageTimeoutMs: 10, previewDeployTimeoutMs: 5000, previewPollMs: 500, ...COOLDOWN },
     git: noopGit, preview,
     runLock: createKeyedMutex(),

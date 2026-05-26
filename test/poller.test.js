@@ -27,47 +27,6 @@ test("new labeled issue → queued run + label swapped", async () => {
   assert.deepEqual(swapped, [5, "claude-dev", "in-progress"]);
 });
 
-test("issue with unmet deps → blocked", async () => {
-  const db = openDb(":memory:");
-  project(db);
-  db.prepare(
-    "INSERT INTO issue_deps (project_id,issue_number,depends_on_issue_number) VALUES (1,9,8)",
-  ).run();
-  const gh = {
-    listLabeledIssues: async () => [{ number: 9, title: "B", body: "" }],
-    swapLabel: async () => {},
-    issue: async (_r, n) => ({ state: n === 8 ? "OPEN" : "OPEN" }),
-  };
-  const poller = createPoller({ db, gh });
-  await poller.tick();
-  assert.equal(
-    db.prepare("SELECT state FROM runs WHERE issue_number=9").get().state,
-    "blocked",
-  );
-});
-
-test("blocker closed → dependent blocked→queued", async () => {
-  const db = openDb(":memory:");
-  project(db);
-  db.prepare(
-    "INSERT INTO runs (project_id,issue_number,state,attempt,created_at,updated_at) VALUES (1,9,'blocked',1,'t','t')",
-  ).run();
-  db.prepare(
-    "INSERT INTO issue_deps (project_id,issue_number,depends_on_issue_number) VALUES (1,9,8)",
-  ).run();
-  const gh = {
-    listLabeledIssues: async () => [],
-    swapLabel: async () => {},
-    issue: async (_r, n) => ({ state: n === 8 ? "CLOSED" : "OPEN", closed: n === 8 }),
-  };
-  const poller = createPoller({ db, gh });
-  await poller.tick();
-  assert.equal(
-    db.prepare("SELECT state FROM runs WHERE issue_number=9").get().state,
-    "queued",
-  );
-});
-
 test("pr_open run whose issue closed → merged", async () => {
   const db = openDb(":memory:");
   project(db);
@@ -95,4 +54,26 @@ test("pr_open run whose issue closed → merged", async () => {
     deleteBranch: true,
     branch: "claude/4-o-r",
   });
+});
+
+test("pr_open is the terminal-from-bot state: no further claude work scheduled", async () => {
+  const db = openDb(":memory:");
+  project(db);
+  db.prepare(
+    "INSERT INTO runs (project_id,issue_number,state,branch,worktree_path,attempt,created_at,updated_at) VALUES (1,77,'pr_open','claude/77-o-r','/wt/77',1,'t','t')",
+  ).run();
+  // Issue still OPEN — poller should leave the run alone (no transition out of pr_open
+  // other than → merged via the closed-issue path).
+  const gh = {
+    listLabeledIssues: async () => [],
+    swapLabel: async () => {},
+    issue: async () => ({ state: "OPEN", closed: false }),
+  };
+  const workspace = { removeWorktree: async () => {} };
+  const poller = createPoller({ db, gh, workspace });
+  await poller.tick();
+  assert.equal(
+    db.prepare("SELECT state FROM runs WHERE issue_number=77").get().state,
+    "pr_open",
+  );
 });

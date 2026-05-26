@@ -52,7 +52,7 @@ test("cancel while stage is in-flight fails run with reason 'cancelled by user'"
   };
 
   const ex = createExecutor({
-    db, gh, workspace: ws, stages, decompose: async () => {},
+    db, gh, workspace: ws, stages,
     config: { stageTimeoutMs: 10000, ...COOLDOWN },
     runLock: createKeyedMutex(),
   });
@@ -83,7 +83,7 @@ test("cancel for non-active queued run sets state failed with reason 'cancelled 
   base(db); // run id=1 is 'queued', never executed
 
   const ex = createExecutor({
-    db, gh, workspace: ws, stages: {}, decompose: async () => {},
+    db, gh, workspace: ws, stages: {},
     config: { stageTimeoutMs: 10000, ...COOLDOWN },
     runLock: createKeyedMutex(),
   });
@@ -109,14 +109,14 @@ test("cancel between stages (during prepareClone) still fails the run with 'canc
     rebaseOnBase: async () => ({ conflicted: false }),
   };
   const stages = {
-    runSpecPlan: async () => ({ size: "small", subIssues: [] }),
+    runSpecPlan: async () => ({}),
     runImplement: async () => ({ allGreen: true }),
     runReview: async () => ({ verdict: "approve", notes: "", checklist: [] }),
     runPr: async () => ({ prUrl: "u" }),
   };
 
   const ex = createExecutor({
-    db, gh, workspace, stages, decompose: async () => {},
+    db, gh, workspace, stages,
     config: { stageTimeoutMs: 10000, ...COOLDOWN },
     runLock: createKeyedMutex(),
   });

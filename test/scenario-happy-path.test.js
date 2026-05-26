@@ -33,7 +33,7 @@ test("S1: single labeled issue → pr_open", async () => {
   };
 
   const stages = {
-    runSpecPlan: async () => ({ size: "small", subIssues: [] }),
+    runSpecPlan: async () => ({}),
     runImplement: async () => ({ allGreen: true }),
     runReview: async () => ({ verdict: "approve" }),
     runPr: async ({ db, run }) => {
@@ -44,14 +44,13 @@ test("S1: single labeled issue → pr_open", async () => {
 
   const config = {
     stageTimeoutMs: 10,
-    prReviewMaxIterations: 4,
     runCooldownMs: 180_000,
     runCooldownMaxMs: 3_600_000,
     keepFailedWorktree: false,
   };
 
   const executor = createExecutor({
-    db, gh, workspace, stages, decompose: async () => {},
+    db, gh, workspace, stages,
     config,
     git: null, // not used — workspace is mocked
     preview: { maybeDeployPreview: async () => {} },

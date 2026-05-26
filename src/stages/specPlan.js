@@ -22,9 +22,8 @@ PIPELINE CONSTRAINTS (mandatory):
 
 Use the superpowers brainstorming + writing-plans approach to produce a spec
 and a phased implementation plan for THIS repository (you are in its worktree).
-Extract explicit acceptance criteria as a checklist. Then judge whether the
-issue is small enough to implement as a single PR, or large enough that it
-must be split into independent, dependency-ordered sub-issues.
+Extract explicit acceptance criteria as a checklist. Treat the issue as a
+single, end-to-end unit of work that will be implemented in this run.
 
 The spec AND the acceptanceChecklist MUST capture, verbatim, every explicit
 convention, constraint, and stack rule stated in the issue (for example:
@@ -36,13 +35,10 @@ as a distinct item in the acceptanceChecklist — not just in prose.
 Run a self-review of the spec+plan (placeholders, contradictions, ambiguity,
 scope). If it does not pass, set selfReviewPassed=false.
 
-If large, propose subIssues as a DAG: each item {key,title,body,dependsOn:[keys]}.
-
 Output ONLY this block at the end:
 <<<RESULT
-{"size":"small|large","spec":"<spec markdown>","plan":"<plan markdown>",
-"acceptanceChecklist":["..."],"selfReviewPassed":true|false,
-"subIssues":[{"key":"a","title":"...","body":"...","dependsOn":[]}]}
+{"spec":"<spec markdown>","plan":"<plan markdown>",
+"acceptanceChecklist":["..."],"selfReviewPassed":true|false}
 RESULT>>>`;
 }
 
@@ -68,8 +64,5 @@ export async function runSpecPlan({ db, run, claude, issue, cwd, timeoutMs, sign
     "acceptance_checklist",
     JSON.stringify(parsed.acceptanceChecklist || []),
   );
-  return {
-    size: parsed.size === "large" ? "large" : "small",
-    subIssues: parsed.subIssues || [],
-  };
+  return {};
 }

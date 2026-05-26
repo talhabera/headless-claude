@@ -4,7 +4,7 @@
 // preserved, so completed stages can be skipped by future smarter logic;
 // for now a clean re-run from queued is correct and safe (idempotent:
 // worktree add is per (issue,attempt); a stale worktree is pruned first).
-const ACTIVE = ["spec_plan", "implementing", "reviewing", "decomposing"];
+const ACTIVE = ["spec_plan", "implementing", "reviewing"];
 
 export function reconcileOnStartup(db) {
   const stranded = db

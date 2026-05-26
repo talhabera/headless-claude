@@ -24,13 +24,9 @@ test("buildAutonomous wires runCooldown config + runLock without crashing", asyn
     assert.equal(sys.config.runCooldownMs, 180_000);
     assert.equal(sys.config.runCooldownMaxMs, 3_600_000);
     assert.equal(sys.config.claudeMinSpawnIntervalMs, 180_000);
-    assert.ok(sys.prSweep && typeof sys.prSweep.tick === "function");
-    assert.ok(sys.prReview && typeof sys.prReview.tick === "function");
     assert.ok(sys.executor && typeof sys.executor.execute === "function");
-    // Stricter check: tick() must not throw "Cannot read properties of undefined (reading 'runExclusive')"
-    // — i.e. runLock must actually be passed through.
-    await sys.prSweep.tick();
-    await sys.prReview.tick();
+    assert.equal(sys.prSweep, undefined, "prSweep must not be wired");
+    assert.equal(sys.prReview, undefined, "prReview must not be wired");
     sys.db.close();
   } finally {
     rmSync(root, { recursive: true, force: true });

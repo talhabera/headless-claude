@@ -25,13 +25,13 @@ test("pr_open keeps the worktree (sweep needs it)", async () => {
     comment: async () => {}, swapLabel: async () => {},
   };
   const stages = {
-    runSpecPlan: async () => ({ size: "small", subIssues: [] }),
+    runSpecPlan: async () => ({}),
     runImplement: async () => ({ allGreen: true }),
     runReview: async () => ({ verdict: "approve" }),
     runPr: async () => ({ prUrl: "u" }),
   };
   const ex = createExecutor({
-    db, gh, workspace, stages, decompose: async () => {},
+    db, gh, workspace, stages,
     config: { stageTimeoutMs: 10, runCooldownMs: 180_000, runCooldownMaxMs: 3_600_000 },
     runLock: createKeyedMutex(),
   });

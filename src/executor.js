@@ -2,7 +2,7 @@
 import { transition, LABEL_FOR } from "./state.js";
 import { recordSuccess, recordFailure } from "./runCooldown.js";
 
-export function createExecutor({ db, gh, workspace, stages, decompose, config, git, preview, runLock, now = () => Date.now() }) {
+export function createExecutor({ db, gh, workspace, stages, config, git, preview, runLock, now = () => Date.now() }) {
   const getRun = (id) => db.prepare("SELECT * FROM runs WHERE id=?").get(id);
   const getProject = (pid) =>
     db.prepare("SELECT * FROM projects WHERE id=?").get(pid);
@@ -97,25 +97,11 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config, g
         run = getRun(runId);
 
         transition(db, run.id, "spec_plan", { stage: "spec_plan", message: "start" });
-        const sp = await stages.runSpecPlan({
+        await stages.runSpecPlan({
           db, run, claude: stages.claude, issue,
           cwd: wt.path, timeoutMs: config.stageTimeoutMs,
           signal: ac.signal,
         });
-
-        if (sp.size === "large") {
-          transition(db, run.id, "decomposing", { stage: "decomposing", message: "splitting" });
-          await decompose({ db, gh, project, parentRun: run, subIssues: sp.subIssues });
-          transition(db, run.id, "decomposed", { stage: "decomposing", message: "done" });
-          success = true;
-          try {
-            await gh.swapLabel(project.repo, run.issue_number, "in-progress", "decomposed");
-          } catch {}
-          try {
-            await workspace.removeWorktree(project, wt.path, {});
-          } catch {}
-          return;
-        }
 
         let attempts = 0;
         while (true) {
@@ -209,7 +195,7 @@ export function createExecutor({ db, gh, workspace, stages, decompose, config, g
     const run = getRun(runId);
     if (run) {
       db.prepare(
-        "UPDATE runs SET state='failed', fail_reason='cancelled by user', updated_at=? WHERE id=? AND state NOT IN ('failed','merged','decomposed','pr_open')",
+        "UPDATE runs SET state='failed', fail_reason='cancelled by user', updated_at=? WHERE id=? AND state NOT IN ('failed','merged','pr_open')",
       ).run(new Date().toISOString(), runId);
     }
     return { cancelled: true, killed: false };

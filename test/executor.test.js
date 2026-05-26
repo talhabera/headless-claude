@@ -38,7 +38,7 @@ test("small issue: queued → pr_open", async () => {
   const db = openDb(":memory:");
   const { run, project } = base(db);
   const stages = {
-    runSpecPlan: async () => ({ size: "small", subIssues: [] }),
+    runSpecPlan: async () => ({}),
     runImplement: async () => ({ allGreen: true }),
     runReview: async () => ({ verdict: "approve", notes: "", checklist: [] }),
     runPr: async ({ db, run }) => {
@@ -46,7 +46,7 @@ test("small issue: queued → pr_open", async () => {
       return { prUrl: "u" };
     },
   };
-  const ex = createExecutor({ db, gh, workspace: ws, stages, decompose: async () => {}, config: { stageTimeoutMs: 10, ...COOLDOWN }, runLock: createKeyedMutex() });
+  const ex = createExecutor({ db, gh, workspace: ws, stages, config: { stageTimeoutMs: 10, ...COOLDOWN }, runLock: createKeyedMutex() });
   await ex.execute(run.id);
   assert.equal(db.prepare("SELECT state FROM runs WHERE id=1").get().state, "pr_open");
 });
@@ -56,7 +56,7 @@ test("review changes-requested loops once then fails on 2nd", async () => {
   const { run } = base(db);
   let reviews = 0;
   const stages = {
-    runSpecPlan: async () => ({ size: "small", subIssues: [] }),
+    runSpecPlan: async () => ({}),
     runImplement: async () => ({ allGreen: true }),
     runReview: async () => {
       reviews++;
@@ -64,7 +64,7 @@ test("review changes-requested loops once then fails on 2nd", async () => {
     },
     runPr: async () => ({ prUrl: "u" }),
   };
-  const ex = createExecutor({ db, gh, workspace: ws, stages, decompose: async () => {}, config: { stageTimeoutMs: 10, ...COOLDOWN }, runLock: createKeyedMutex() });
+  const ex = createExecutor({ db, gh, workspace: ws, stages, config: { stageTimeoutMs: 10, ...COOLDOWN }, runLock: createKeyedMutex() });
   await ex.execute(run.id);
   assert.equal(reviews, 2);
   const r = db.prepare("SELECT state, fail_reason FROM runs WHERE id=1").get();
@@ -82,7 +82,7 @@ test("stage throw → failed + issue comment", async () => {
       throw new Error("spec_plan: timed out");
     },
   };
-  const ex = createExecutor({ db, gh: gh2, workspace: ws, stages, decompose: async () => {}, config: { stageTimeoutMs: 10, ...COOLDOWN }, runLock: createKeyedMutex() });
+  const ex = createExecutor({ db, gh: gh2, workspace: ws, stages, config: { stageTimeoutMs: 10, ...COOLDOWN }, runLock: createKeyedMutex() });
   await ex.execute(run.id);
   const r = db.prepare("SELECT state, fail_reason FROM runs WHERE id=1").get();
   assert.equal(r.state, "failed");

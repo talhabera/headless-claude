@@ -52,7 +52,6 @@ test("S2: 5 issues labeled at once → max 2 concurrent claude spawns at any ins
     };
     const config = {
       stageTimeoutMs: 1000,
-      prReviewMaxIterations: 4,
       runCooldownMs: 0,
       runCooldownMaxMs: 0,
       keepFailedWorktree: false,
@@ -68,7 +67,7 @@ test("S2: 5 issues labeled at once → max 2 concurrent claude spawns at any ins
       claude,
       runSpecPlan: async (o) => {
         await claude.run({ cwd: o.cwd, prompt: "x", timeoutMs: 1000 });
-        return { size: "small" };
+        return {};
       },
       runImplement: async (o) => { await claude.run({ cwd: o.cwd, prompt: "x", timeoutMs: 1000 }); },
       runReview: async (o) => {
@@ -81,7 +80,7 @@ test("S2: 5 issues labeled at once → max 2 concurrent claude spawns at any ins
       },
     };
     const executor = createExecutor({
-      db, gh, workspace, stages, decompose: async () => {},
+      db, gh, workspace, stages,
       config, git: null,
       preview: { maybeDeployPreview: async () => {} },
       runLock: createKeyedMutex(),
